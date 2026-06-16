@@ -11,7 +11,20 @@ import {
   safeMarketplaces,
   seedAssumptions,
 } from "./engine";
-import { isForbiddenModuleKey, RunStatus } from "./types";
+import {
+  QC_THRESHOLDS,
+  REQUIRED_CORE_MODULES,
+  RunStatus,
+  isForbiddenModuleKey,
+} from "./types";
+
+type Bundle = Awaited<ReturnType<typeof getRunBundle>>;
+type OutputModule = Bundle["modules"][number];
+
+actionGuardNoop();
+function actionGuardNoop() {
+  // Keeps this module tree-shake safe. No runtime side-effect.
+}
 
 async function uid() {
   const { data } = await supabase.auth.getUser();
@@ -28,17 +41,12 @@ export async function getSettings() {
     .maybeSingle();
   if (error) throw error;
   if (data) return data;
-  // Insert default if missing (safety net)
-  const ins = await supabase
-    .from("user_settings")
-    .insert({ user_id: owner })
-    .select("*")
-    .single();
+  const ins = await supabase.from("user_settings").insert({ user_id: owner }).select("*").single();
   if (ins.error) throw ins.error;
   return ins.data;
 }
 
-export async function updateSettings(updates: Record<string, any>) {
+export async function updateSettings(updates: Record<string, unknown>) {
   const owner = await uid();
   const { data, error } = await supabase
     .from("user_settings")
@@ -56,7 +64,7 @@ export async function listRuns() {
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return data;
+  return data ?? [];
 }
 
 export interface NewRunInput {
@@ -81,7 +89,6 @@ export interface NewRunInput {
 export async function createRun(input: NewRunInput) {
   const owner = await uid();
   const marketplaces = safeMarketplaces(input.marketplaces);
-  // Auto-fill anchors if too few
   let anchors = input.key_anchors;
   if (!anchors || anchors.length < 3) {
     anchors = generateKeyAnchors({
@@ -143,10 +150,7 @@ export async function createRun(input: NewRunInput) {
 }
 
 export async function stopRun(runId: string) {
-  const { error } = await supabase
-    .from("runs")
-    .update({ status: "STOPPED" as RunStatus })
-    .eq("id", runId);
+  const { error } = await supabase.from("runs").update({ status: "STOPPED" as RunStatus }).eq("id", runId);
   if (error) throw error;
 }
 
@@ -197,7 +201,7 @@ export async function generateArchitectureForRun(runId: string) {
   const owner = await uid();
   const bundle = await getRunBundle(runId);
   if (!bundle.seller) throw new Error("Seller input belum lengkap.");
-  const payload: any = generateArchitecture({
+  const payload = generateArchitecture({
     brand: bundle.seller.brand ?? undefined,
     niche: bundle.seller.niche ?? undefined,
     audience: bundle.seller.audience ?? undefined,
@@ -212,7 +216,6 @@ export async function generateArchitectureForRun(runId: string) {
   } else {
     await supabase.from("architecture_outputs").insert([{ owner_id: owner, run_id: runId, payload }]);
   }
-  // Seed assumptions if none
   if (bundle.assumptions.length === 0) {
     const seeds = seedAssumptions(bundle.run?.adapter ?? "CUSTOM");
     await supabase.from("assumptions").insert(seeds.map((a) => ({ ...a, owner_id: owner, run_id: runId })));
@@ -223,8 +226,7 @@ export async function generateArchitectureForRun(runId: string) {
 export async function approveArchitecture(runId: string) {
   const bundle = await getRunBundle(runId);
   if (!bundle.architecture) throw new Error("Arsitektur belum digenerate.");
-  // Block if critical assumption unresolved
-  const blocking = bundle.assumptions.filter((a: any) => a.type === "critical" && a.status === "pending");
+  const blocking = bundle.assumptions.filter((a) => a.type === "critical" && a.status === "pending");
   if (blocking.length) {
     await supabase.from("runs").update({ status: "BLOCKED_CRITICAL_ASSUMPTION" as RunStatus }).eq("id", runId);
     throw new Error("Asumsi kritis masih pending. Konfirmasi/koreksi dulu di tab Asumsi.");
@@ -243,36 +245,47 @@ export async function rejectAssumption(assumptionId: string) {
   await supabase.from("assumptions").update({ status: "rejected" }).eq("id", assumptionId);
 }
 
+function expectedFiles(payload: any): string[] {
+  return (payload?.expected_modules ?? []).map((m: { file: string }) => m.file);
+}
+
+function expectedKeys(payload: any): string[] {
+  return (payload?.expected_modules ?? []).map((m: { key: string }) => m.key);
+}
+
 export async function buildManifest(runId: string) {
   const owner = await uid();
   const bundle = await getRunBundle(runId);
   if (!bundle.seller || !bundle.run) throw new Error("Run belum siap.");
-  const blocking = bundle.assumptions.filter((a: any) => a.type === "critical" && a.status === "pending");
+  const blocking = bundle.assumptions.filter((a) => a.type === "critical" && a.status === "pending");
   if (blocking.length) {
     await supabase.from("runs").update({ status: "BLOCKED_CRITICAL_ASSUMPTION" as RunStatus }).eq("id", runId);
     throw new Error("Tidak bisa build manifest: asumsi kritis belum dikonfirmasi.");
   }
+
   await supabase.from("runs").update({ status: "MANIFEST_PENDING" as RunStatus }).eq("id", runId);
 
   const payload = buildManifestPayload({
+    runId: bundle.run.run_request_id,
+    brand: bundle.seller.brand ?? "Prompt Product",
+    language: bundle.seller.language ?? "Indonesia",
+    targetMarket: bundle.seller.target_market ?? "Indonesia",
+    niche: bundle.seller.niche ?? "",
     adapter: bundle.run.adapter,
     marketplaces: bundle.run.marketplaces ?? [],
     promptCount: bundle.seller.prompt_count ?? 10,
+    license: bundle.seller.license ?? "Personal & Commercial",
   });
 
-  // Wipe existing modules/chunks (idempotent rebuild)
   await supabase.from("batch_chunks").delete().eq("run_id", runId);
   await supabase.from("output_modules").delete().eq("run_id", runId);
 
-  if (bundle.manifest) {
-    await supabase.from("manifests").update({ payload }).eq("id", bundle.manifest.id);
-  } else {
-    await supabase.from("manifests").insert({ owner_id: owner, run_id: runId, payload });
-  }
+  if (bundle.manifest) await supabase.from("manifests").update({ payload }).eq("id", bundle.manifest.id);
+  else await supabase.from("manifests").insert({ owner_id: owner, run_id: runId, payload });
 
   const moduleRows = payload.expected_modules
-    .filter((m: any) => !isForbiddenModuleKey(m.key))
-    .map((m: any) => ({
+    .filter((m) => !isForbiddenModuleKey(m.key) && !isForbiddenModuleKey(m.file))
+    .map((m) => ({
       owner_id: owner,
       run_id: runId,
       module_key: m.key,
@@ -283,25 +296,72 @@ export async function buildManifest(runId: string) {
   const inserted = await supabase.from("output_modules").insert(moduleRows).select("*");
   if (inserted.error) throw inserted.error;
 
-  // Insert chunks per module
   let idx = 0;
-  const chunks: any[] = [];
-  for (const m of inserted.data ?? []) {
-    const meta = payload.expected_modules.find((x: any) => x.key === m.module_key);
-    const n = meta?.chunks ?? 1;
-    for (let i = 0; i < n; i++) {
-      chunks.push({
-        owner_id: owner,
-        run_id: runId,
-        module_id: m.id,
-        chunk_index: idx++,
-        status: "pending",
-      });
-    }
-  }
-  if (chunks.length) await supabase.from("batch_chunks").insert(chunks);
+  const chunkRows = (inserted.data ?? []).map((m) => ({
+    owner_id: owner,
+    run_id: runId,
+    module_id: m.id,
+    chunk_index: idx++,
+    status: "pending",
+    validation: "unknown",
+    acked: false,
+  }));
+  if (chunkRows.length) await supabase.from("batch_chunks").insert(chunkRows);
 
   await supabase.from("runs").update({ status: "MANIFEST_READY" as RunStatus }).eq("id", runId);
+}
+
+function makeGenerationSeller(bundle: Bundle) {
+  const seller = bundle.seller;
+  if (!seller) throw new Error("Seller input belum lengkap.");
+  return {
+    brand: seller.brand ?? undefined,
+    niche: seller.niche ?? undefined,
+    audience: seller.audience ?? undefined,
+    promptCount: seller.prompt_count ?? 10,
+    prompt_count: seller.prompt_count ?? 10,
+    tone: seller.tone ?? "Friendly",
+    confirmedDescription: seller.confirmed_product_description ?? undefined,
+    confirmed_product_description: seller.confirmed_product_description ?? undefined,
+    license: seller.license ?? undefined,
+    language: seller.language ?? undefined,
+    target_market: seller.target_market ?? undefined,
+    target_price: seller.target_price ?? undefined,
+  };
+}
+
+async function persistQC(runId: string, ownerId: string, qc: ReturnType<typeof runQC>, existingQcId?: string) {
+  if (existingQcId) {
+    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", existingQcId);
+  } else {
+    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
+  }
+}
+
+function deriveReady(qc: ReturnType<typeof runQC>, bundle: Bundle): boolean {
+  const payload = bundle.manifest?.payload as any;
+  const requiredFiles = expectedFiles(payload);
+  const moduleFiles = new Set(bundle.modules.map((m) => m.file_name));
+  const allExpectedPresent = requiredFiles.every((file) => moduleFiles.has(file));
+  const allAcked = bundle.modules.length > 0 && bundle.modules.every((m) => m.status === "acked" && m.validation === "PASS" && m.content);
+  const noApi = bundle.modules.every((m) => !isForbiddenModuleKey(m.module_key) && !isForbiddenModuleKey(m.file_name));
+  return Boolean(allExpectedPresent && allAcked && noApi && qc.score >= QC_THRESHOLDS.MIN_SELL_READY && qc.blocking_errors === 0);
+}
+
+async function runAndPersistQC(runId: string, bundleBefore: Bundle) {
+  const latest = await getRunBundle(runId);
+  if (!latest.seller || !latest.run) throw new Error("Run belum siap untuk QC.");
+  const qc = runQC({
+    promptCount: latest.seller.prompt_count ?? 10,
+    modules: latest.modules,
+    anchors: latest.seller.key_anchors ?? [],
+    confirmedDescription: latest.seller.confirmed_product_description ?? "",
+    marketplaces: latest.run.marketplaces ?? [],
+  });
+  await persistQC(runId, latest.run.owner_id, qc, latest.qc?.id);
+  const status: RunStatus = deriveReady(qc, latest) ? "READY_FOR_SELLER_REVIEW" : qc.score >= QC_THRESHOLDS.MIN_SELL_READY ? "FILES_PARTIAL" : "CHUNK_VALIDATION_FAILED";
+  await supabase.from("runs").update({ status }).eq("id", runId);
+  return { qc, status, latest, previous: bundleBefore };
 }
 
 export async function generateAllRemainingFiles(runId: string) {
@@ -314,121 +374,108 @@ export async function generateAllRemainingFilesWithProgress(
   options: { force?: boolean } = {}
 ) {
   const bundle = await getRunBundle(runId);
-  if (!bundle.manifest || !bundle.seller) throw new Error("Manifest belum dibuat.");
+  if (!bundle.manifest || !bundle.seller || !bundle.run) throw new Error("Manifest belum dibuat.");
+
+  const payload = bundle.manifest.payload as any;
+  const missingCore = REQUIRED_CORE_MODULES.map((m) => m.file).filter((file) => !expectedFiles(payload).includes(file));
+  if (missingCore.length) throw new Error(`Manifest belum sell-ready. Klik Build Manifest ulang. Missing: ${missingCore.join(", ")}`);
+
   await supabase.from("runs").update({ status: "CHUNK_RUNNING" as RunStatus }).eq("id", runId);
 
-  const seller = bundle.seller;
-  const marketplaces = bundle.run?.marketplaces ?? [];
-  const adapter = bundle.run?.adapter ?? "CUSTOM";
-
-  const targets = options.force
-    ? bundle.modules
-    : bundle.modules.filter((m: any) => m.status !== "acked");
+  const targets = options.force ? bundle.modules : bundle.modules.filter((m) => m.status !== "acked" || m.validation !== "PASS");
   const total = targets.length;
   const startedAt = Date.now();
+  const seller = makeGenerationSeller(bundle);
   let i = 0;
-  for (const m of targets) {
-    i++;
-    onProgress?.(i, total, m.file_name);
-    if (Date.now() - startedAt > 60000) {
-      throw new Error("Generate terlalu lama. Klik Retry atau lanjutkan dari file terakhir.");
-    }
-    if (isForbiddenModuleKey(m.module_key)) {
-      await supabase.from("output_modules").update({ status: "failed", validation: "FAIL" }).eq("id", m.id);
+
+  for (const module of targets) {
+    i += 1;
+    onProgress?.(i, total, module.file_name);
+    if (Date.now() - startedAt > 60000) throw new Error("Generate terlalu lama. Klik Retry atau lanjutkan dari file terakhir.");
+    if (isForbiddenModuleKey(module.module_key) || isForbiddenModuleKey(module.file_name)) {
+      await supabase.from("output_modules").update({ status: "failed", validation: "FAIL", content: null }).eq("id", module.id);
+      await supabase.from("batch_chunks").update({ status: "failed", validation: "FAIL", acked: false }).eq("module_id", module.id);
       continue;
     }
-    const out = generateModuleContent({
-      moduleKey: m.module_key,
-      fileName: m.file_name,
-      seller: {
-        brand: seller.brand ?? undefined,
-        niche: seller.niche ?? undefined,
-        audience: seller.audience ?? undefined,
-        promptCount: seller.prompt_count ?? 10,
-        tone: seller.tone ?? "Friendly",
-        confirmedDescription: seller.confirmed_product_description ?? undefined,
-        confirmed_product_description: seller.confirmed_product_description ?? undefined,
-        license: seller.license ?? undefined,
-      },
-      marketplaces,
-      adapter,
+    const output = generateModuleContent({
+      moduleKey: module.module_key,
+      fileName: module.file_name,
+      seller,
+      marketplaces: bundle.run.marketplaces ?? [],
+      adapter: bundle.run.adapter,
     });
-    const newStatus = out.validation === "PASS" ? "acked" : "failed";
-    await supabase
-      .from("output_modules")
-      .update({ content: out.content, validation: out.validation, status: newStatus })
-      .eq("id", m.id);
-    // ACK all chunks for this module
-    await supabase
-      .from("batch_chunks")
-      .update({ status: newStatus === "acked" ? "acked" : "failed", validation: out.validation, acked: newStatus === "acked" })
-      .eq("module_id", m.id);
-    // Continue loop even on FAIL; final QC decides readiness.
+    const newStatus = output.validation === "PASS" ? "acked" : "failed";
+    await supabase.from("output_modules").update({ content: output.content, validation: output.validation, status: newStatus }).eq("id", module.id);
+    await supabase.from("batch_chunks").update({ status: newStatus, validation: output.validation, acked: newStatus === "acked" }).eq("module_id", module.id);
   }
 
-  // Marketplace bundle results — clean rebuild
   await supabase.from("marketplace_bundle_results").delete().eq("run_id", runId);
-  if (marketplaces.length) {
-    const ownerId = bundle.run?.owner_id!;
+  if ((bundle.run.marketplaces ?? []).length) {
     await supabase.from("marketplace_bundle_results").insert(
-      marketplaces.map((m: string) => ({
-        owner_id: ownerId,
+      (bundle.run.marketplaces ?? []).map((m) => ({
+        owner_id: bundle.run!.owner_id,
         run_id: runId,
         marketplace: m,
-        payload: { mode: "MANUAL_UPLOAD_ONLY", note: `Draft listing untuk ${m} siap. Upload manual.` },
+        payload: { mode: "MANUAL_UPLOAD_ONLY", note: `Draft listing untuk ${m} siap. Upload manual dan seller review wajib.` },
         validation: "PASS",
       }))
     );
   }
 
-  // Run QC
-  const after = await getRunBundle(runId);
-  const qc = runQC({
-    promptCount: seller.prompt_count ?? 10,
-    modules: after.modules as any,
-    anchors: seller.key_anchors ?? [],
-    confirmedDescription: seller.confirmed_product_description ?? "",
-  });
-  const ownerId = bundle.run!.owner_id;
-  if (after.qc) {
-    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", after.qc.id);
-  } else {
-    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
-  }
-
-  // Readiness
-  const ready = qc.blocking_errors === 0;
-  await supabase
-    .from("runs")
-    .update({ status: (ready ? "READY_FOR_SELLER_REVIEW" : "CHUNK_VALIDATION_FAILED") as RunStatus })
-    .eq("id", runId);
+  await runAndPersistQC(runId, bundle);
 }
 
 export async function retryModule(moduleId: string) {
-  await supabase.from("output_modules").update({ status: "pending", validation: "unknown" }).eq("id", moduleId);
+  await supabase.from("output_modules").update({ status: "pending", validation: "unknown", content: null }).eq("id", moduleId);
   await supabase.from("batch_chunks").update({ status: "pending", acked: false, validation: "unknown" }).eq("module_id", moduleId);
+}
+
+function approvalDiagnostics(bundle: Bundle): string[] {
+  const messages: string[] = [];
+  const qcPayload = bundle.qc?.payload as any;
+  const payload = bundle.manifest?.payload as any;
+  if (!bundle.manifest) messages.push("Manifest belum dibuat.");
+  if (!bundle.qc) messages.push("QC belum dijalankan.");
+  if (qcPayload) {
+    if ((qcPayload.score ?? 0) < QC_THRESHOLDS.MIN_SELL_READY) messages.push(`QC score ${qcPayload.score ?? 0} masih di bawah ${QC_THRESHOLDS.MIN_SELL_READY}.`);
+    if ((qcPayload.blocking_errors ?? 0) > 0) messages.push(`QC masih punya ${qcPayload.blocking_errors} blocking error.`);
+  }
+  if (payload) {
+    const files = expectedFiles(payload);
+    const outputByFile = new Map(bundle.modules.map((m) => [m.file_name, m]));
+    const missing = files.filter((file) => !outputByFile.has(file));
+    if (missing.length) messages.push(`Output module belum lengkap: ${missing.join(", ")}`);
+    const notAcked = files.map((file) => outputByFile.get(file)).filter((m): m is OutputModule => Boolean(m)).filter((m) => m.status !== "acked" || m.validation !== "PASS" || !m.content);
+    if (notAcked.length) messages.push(`Masih ada file belum PASS/ACKED: ${notAcked.map((m) => m.file_name).join(", ")}`);
+    const api = bundle.modules.filter((m) => isForbiddenModuleKey(m.module_key) || isForbiddenModuleKey(m.file_name));
+    if (api.length) messages.push(`Ditemukan API_* module: ${api.map((m) => m.file_name).join(", ")}`);
+  }
+  return messages;
 }
 
 export async function approvePackage(runId: string) {
   const bundle = await getRunBundle(runId);
-  if (bundle.run?.status !== "READY_FOR_SELLER_REVIEW") {
-    throw new Error("Paket belum siap untuk disetujui.");
+  if (!bundle.run) throw new Error("Run tidak ditemukan.");
+  const latest = await runAndPersistQC(runId, bundle);
+  const refreshed = await getRunBundle(runId);
+  const messages = approvalDiagnostics(refreshed);
+  if (messages.length || latest.qc.score < QC_THRESHOLDS.MIN_SELL_READY || latest.qc.blocking_errors > 0) {
+    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ") || "Periksa QC terlebih dahulu."}`);
   }
-  await supabase
-    .from("runs")
-    .update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() })
-    .eq("id", runId);
-  const owner = bundle.run!.owner_id;
+  await supabase.from("runs").update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() }).eq("id", runId);
   await supabase.from("exports").insert({
-    owner_id: owner,
+    owner_id: bundle.run.owner_id,
     run_id: runId,
     payload: {
       mode: "MANUAL_UPLOAD_ONLY",
-      files: bundle.modules.map((m: any) => ({ file: m.file_name, key: m.module_key })),
+      qc_score: latest.qc.score,
+      qc_status: latest.qc.status,
+      files: refreshed.modules.map((m) => ({ file: m.file_name, key: m.module_key })),
       approved_at: new Date().toISOString(),
     },
   });
 }
+
 export interface RegenerateSummary {
   modulesRegenerated: number;
   filesUpdated: string[];
@@ -436,96 +483,53 @@ export interface RegenerateSummary {
   blockingBefore: number;
   blockingAfter: number;
   runStatus: string;
+  scoreBefore?: number;
+  scoreAfter?: number;
 }
 
 async function regenerateInternal(
   runId: string,
-  targets: any[],
+  targets: OutputModule[],
   onProgress?: (i: number, total: number, file: string) => void
 ): Promise<RegenerateSummary> {
   const before = await getRunBundle(runId);
-  const blockingBefore = before.qc?.blocking_errors ?? 0;
   if (!before.seller || !before.run || !before.manifest) throw new Error("Run belum siap untuk regenerate.");
-
-  const seller = before.seller;
-  const marketplaces = before.run.marketplaces ?? [];
-  const adapter = before.run.adapter ?? "CUSTOM";
-
-  // Reset selected modules to pending so generator rewrites them
+  const beforePayload = before.qc?.payload as any;
+  const blockingBefore = before.qc?.blocking_errors ?? 0;
+  const scoreBefore = beforePayload?.score ?? 0;
+  const seller = makeGenerationSeller(before);
   const targetIds = targets.map((m) => m.id);
   if (targetIds.length) {
-    await supabase.from("output_modules")
-      .update({ status: "pending", validation: "unknown", content: null })
-      .in("id", targetIds);
-    await supabase.from("batch_chunks")
-      .update({ status: "pending", acked: false, validation: "unknown" })
-      .in("module_id", targetIds);
+    await supabase.from("output_modules").update({ status: "pending", validation: "unknown", content: null }).in("id", targetIds);
+    await supabase.from("batch_chunks").update({ status: "pending", acked: false, validation: "unknown" }).in("module_id", targetIds);
   }
-
   const filesUpdated: string[] = [];
   let i = 0;
-  const total = targets.length;
-  for (const m of targets) {
-    i++;
-    onProgress?.(i, total, m.file_name);
-    if (isForbiddenModuleKey(m.module_key)) {
-      await supabase.from("output_modules").update({ status: "failed", validation: "FAIL" }).eq("id", m.id);
-      continue;
-    }
-    const out = generateModuleContent({
-      moduleKey: m.module_key,
-      fileName: m.file_name,
-      seller: {
-        brand: seller.brand ?? undefined,
-        niche: seller.niche ?? undefined,
-        audience: seller.audience ?? undefined,
-        promptCount: seller.prompt_count ?? 10,
-        tone: seller.tone ?? "Friendly",
-        confirmedDescription: seller.confirmed_product_description ?? undefined,
-        confirmed_product_description: seller.confirmed_product_description ?? undefined,
-        license: seller.license ?? undefined,
-      },
-      marketplaces,
-      adapter,
+  for (const module of targets) {
+    i += 1;
+    onProgress?.(i, targets.length, module.file_name);
+    const output = generateModuleContent({
+      moduleKey: module.module_key,
+      fileName: module.file_name,
+      seller,
+      marketplaces: before.run.marketplaces ?? [],
+      adapter: before.run.adapter,
     });
-    if (!out.content || out.content.trim().length < 50) continue;
-    const newStatus = out.validation === "PASS" ? "acked" : "failed";
-    const upd = await supabase
-      .from("output_modules")
-      .update({ content: out.content, validation: out.validation, status: newStatus })
-      .eq("id", m.id)
-      .select("file_name");
-    if (!upd.error && upd.data && upd.data.length) filesUpdated.push(m.file_name);
-    await supabase
-      .from("batch_chunks")
-      .update({ status: newStatus === "acked" ? "acked" : "failed", validation: out.validation, acked: newStatus === "acked" })
-      .eq("module_id", m.id);
+    const newStatus = output.validation === "PASS" ? "acked" : "failed";
+    const update = await supabase.from("output_modules").update({ content: output.content, validation: output.validation, status: newStatus }).eq("id", module.id).select("file_name");
+    if (!update.error && update.data?.length) filesUpdated.push(module.file_name);
+    await supabase.from("batch_chunks").update({ status: newStatus, validation: output.validation, acked: newStatus === "acked" }).eq("module_id", module.id);
   }
-
-  // Force re-fetch fresh module content from DB and re-run QC
-  const after = await getRunBundle(runId);
-  const qc = runQC({
-    promptCount: seller.prompt_count ?? 10,
-    modules: after.modules as any,
-    anchors: seller.key_anchors ?? [],
-    confirmedDescription: seller.confirmed_product_description ?? "",
-  });
-  const ownerId = before.run.owner_id;
-  if (after.qc) {
-    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", after.qc.id);
-  } else {
-    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
-  }
-  const newRunStatus: RunStatus = qc.blocking_errors === 0 ? "READY_FOR_SELLER_REVIEW" : "CHUNK_VALIDATION_FAILED";
-  await supabase.from("runs").update({ status: newRunStatus }).eq("id", runId);
-
+  const { qc, status } = await runAndPersistQC(runId, before);
   return {
     modulesRegenerated: targets.length,
     filesUpdated,
     qcRerun: true,
     blockingBefore,
     blockingAfter: qc.blocking_errors,
-    runStatus: newRunStatus,
+    runStatus: status,
+    scoreBefore,
+    scoreAfter: qc.score,
   };
 }
 
@@ -534,7 +538,7 @@ export async function regeneratePackageContent(
   onProgress?: (i: number, total: number, file: string) => void
 ): Promise<RegenerateSummary> {
   const bundle = await getRunBundle(runId);
-  return regenerateInternal(runId, bundle.modules ?? [], onProgress);
+  return regenerateInternal(runId, bundle.modules, onProgress);
 }
 
 export async function hardRegenerateFailedModules(
@@ -542,19 +546,9 @@ export async function hardRegenerateFailedModules(
   onProgress?: (i: number, total: number, file: string) => void
 ): Promise<RegenerateSummary> {
   const bundle = await getRunBundle(runId);
-  // Identify failed modules: explicit "failed" status, or modules referenced in latest QC errors by file name
-  const failedByStatus = (bundle.modules ?? []).filter((m: any) => m.status === "failed" || m.validation === "FAIL");
   const qcPayload = (bundle.qc?.payload as any) ?? {};
-  const qcErrors: string[] = Array.isArray(qcPayload.errors) ? qcPayload.errors : [];
-  const filesFromQc = new Set<string>();
-  for (const e of qcErrors) {
-    for (const m of bundle.modules ?? []) {
-      if (e.includes(m.file_name)) filesFromQc.add(m.file_name);
-    }
-  }
-  const targets = (bundle.modules ?? []).filter(
-    (m: any) => failedByStatus.includes(m) || filesFromQc.has(m.file_name)
-  );
+  const errorText = [...(qcPayload.errors ?? []), ...(qcPayload.warnings ?? [])].join("\n");
+  const targets = bundle.modules.filter((m) => m.status === "failed" || m.validation === "FAIL" || errorText.includes(m.file_name));
   if (!targets.length) {
     return {
       modulesRegenerated: 0,
@@ -563,14 +557,34 @@ export async function hardRegenerateFailedModules(
       blockingBefore: bundle.qc?.blocking_errors ?? 0,
       blockingAfter: bundle.qc?.blocking_errors ?? 0,
       runStatus: bundle.run?.status ?? "UNKNOWN",
+      scoreBefore: qcPayload.score ?? 0,
+      scoreAfter: qcPayload.score ?? 0,
     };
   }
   return regenerateInternal(runId, targets, onProgress);
 }
 
+export async function upgradePackageToSellReady(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const first = await getRunBundle(runId);
+  const payload = first.manifest?.payload as any;
+  const expected = expectedKeys(payload);
+  const needsManifest = !first.manifest || REQUIRED_CORE_MODULES.some((m) => !expected.includes(m.key));
+  if (needsManifest) await buildManifest(runId);
+  await supabase.from("runs").update({ status: "UPGRADE_IN_PROGRESS" as RunStatus }).eq("id", runId);
+  const bundle = await getRunBundle(runId);
+  const qcPayload = (bundle.qc?.payload as any) ?? {};
+  const problemText = [...(qcPayload.errors ?? []), ...(qcPayload.warnings ?? [])].join("\n");
+  const targets = bundle.modules.filter((m) => {
+    const missing = !m.content || m.status !== "acked" || m.validation !== "PASS";
+    const weak = problemText.includes(m.file_name);
+    return missing || weak;
+  });
+  return regenerateInternal(runId, targets.length ? targets : bundle.modules, onProgress);
+}
+
 export async function reopenForRegeneration(runId: string) {
-  await supabase
-    .from("runs")
-    .update({ status: "READY_FOR_SELLER_REVIEW" as RunStatus, approved_at: null })
-    .eq("id", runId);
+  await supabase.from("runs").update({ status: "READY_FOR_SELLER_REVIEW" as RunStatus, approved_at: null }).eq("id", runId);
 }
