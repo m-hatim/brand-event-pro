@@ -363,10 +363,7 @@ export async function generateAllRemainingFilesWithProgress(
       .from("batch_chunks")
       .update({ status: newStatus === "acked" ? "acked" : "failed", validation: out.validation, acked: newStatus === "acked" })
       .eq("module_id", m.id);
-    if (out.validation === "FAIL") {
-      await supabase.from("runs").update({ status: "CHUNK_VALIDATION_FAILED" as RunStatus }).eq("id", runId);
-      return;
-    }
+    // Continue loop even on FAIL; final QC decides readiness.
   }
 
   // Marketplace bundle results — clean rebuild
@@ -432,19 +429,142 @@ export async function approvePackage(runId: string) {
     },
   });
 }
+export interface RegenerateSummary {
+  modulesRegenerated: number;
+  filesUpdated: string[];
+  qcRerun: boolean;
+  blockingBefore: number;
+  blockingAfter: number;
+  runStatus: string;
+}
+
+async function regenerateInternal(
+  runId: string,
+  targets: any[],
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const before = await getRunBundle(runId);
+  const blockingBefore = before.qc?.blocking_errors ?? 0;
+  if (!before.seller || !before.run || !before.manifest) throw new Error("Run belum siap untuk regenerate.");
+
+  const seller = before.seller;
+  const marketplaces = before.run.marketplaces ?? [];
+  const adapter = before.run.adapter ?? "CUSTOM";
+
+  // Reset selected modules to pending so generator rewrites them
+  const targetIds = targets.map((m) => m.id);
+  if (targetIds.length) {
+    await supabase.from("output_modules")
+      .update({ status: "pending", validation: "unknown", content: null })
+      .in("id", targetIds);
+    await supabase.from("batch_chunks")
+      .update({ status: "pending", acked: false, validation: "unknown" })
+      .in("module_id", targetIds);
+  }
+
+  const filesUpdated: string[] = [];
+  let i = 0;
+  const total = targets.length;
+  for (const m of targets) {
+    i++;
+    onProgress?.(i, total, m.file_name);
+    if (isForbiddenModuleKey(m.module_key)) {
+      await supabase.from("output_modules").update({ status: "failed", validation: "FAIL" }).eq("id", m.id);
+      continue;
+    }
+    const out = generateModuleContent({
+      moduleKey: m.module_key,
+      fileName: m.file_name,
+      seller: {
+        brand: seller.brand ?? undefined,
+        niche: seller.niche ?? undefined,
+        audience: seller.audience ?? undefined,
+        promptCount: seller.prompt_count ?? 10,
+        tone: seller.tone ?? "Friendly",
+        confirmedDescription: seller.confirmed_product_description ?? undefined,
+        confirmed_product_description: seller.confirmed_product_description ?? undefined,
+        license: seller.license ?? undefined,
+      },
+      marketplaces,
+      adapter,
+    });
+    if (!out.content || out.content.trim().length < 50) continue;
+    const newStatus = out.validation === "PASS" ? "acked" : "failed";
+    const upd = await supabase
+      .from("output_modules")
+      .update({ content: out.content, validation: out.validation, status: newStatus })
+      .eq("id", m.id)
+      .select("file_name");
+    if (!upd.error && upd.data && upd.data.length) filesUpdated.push(m.file_name);
+    await supabase
+      .from("batch_chunks")
+      .update({ status: newStatus === "acked" ? "acked" : "failed", validation: out.validation, acked: newStatus === "acked" })
+      .eq("module_id", m.id);
+  }
+
+  // Force re-fetch fresh module content from DB and re-run QC
+  const after = await getRunBundle(runId);
+  const qc = runQC({
+    promptCount: seller.prompt_count ?? 10,
+    modules: after.modules as any,
+    anchors: seller.key_anchors ?? [],
+    confirmedDescription: seller.confirmed_product_description ?? "",
+  });
+  const ownerId = before.run.owner_id;
+  if (after.qc) {
+    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", after.qc.id);
+  } else {
+    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
+  }
+  const newRunStatus: RunStatus = qc.blocking_errors === 0 ? "READY_FOR_SELLER_REVIEW" : "CHUNK_VALIDATION_FAILED";
+  await supabase.from("runs").update({ status: newRunStatus }).eq("id", runId);
+
+  return {
+    modulesRegenerated: targets.length,
+    filesUpdated,
+    qcRerun: true,
+    blockingBefore,
+    blockingAfter: qc.blocking_errors,
+    runStatus: newRunStatus,
+  };
+}
+
 export async function regeneratePackageContent(
   runId: string,
   onProgress?: (i: number, total: number, file: string) => void
-) {
-  await supabase
-    .from("output_modules")
-    .update({ status: "pending", validation: "unknown", content: null })
-    .eq("run_id", runId);
-  await supabase
-    .from("batch_chunks")
-    .update({ status: "pending", acked: false, validation: "unknown" })
-    .eq("run_id", runId);
-  await generateAllRemainingFilesWithProgress(runId, onProgress, { force: true });
+): Promise<RegenerateSummary> {
+  const bundle = await getRunBundle(runId);
+  return regenerateInternal(runId, bundle.modules ?? [], onProgress);
+}
+
+export async function hardRegenerateFailedModules(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const bundle = await getRunBundle(runId);
+  // Identify failed modules: explicit "failed" status, or modules referenced in latest QC errors by file name
+  const failedByStatus = (bundle.modules ?? []).filter((m: any) => m.status === "failed" || m.validation === "FAIL");
+  const qcErrors: string[] = bundle.qc?.payload?.errors ?? [];
+  const filesFromQc = new Set<string>();
+  for (const e of qcErrors) {
+    for (const m of bundle.modules ?? []) {
+      if (e.includes(m.file_name)) filesFromQc.add(m.file_name);
+    }
+  }
+  const targets = (bundle.modules ?? []).filter(
+    (m: any) => failedByStatus.includes(m) || filesFromQc.has(m.file_name)
+  );
+  if (!targets.length) {
+    return {
+      modulesRegenerated: 0,
+      filesUpdated: [],
+      qcRerun: false,
+      blockingBefore: bundle.qc?.blocking_errors ?? 0,
+      blockingAfter: bundle.qc?.blocking_errors ?? 0,
+      runStatus: bundle.run?.status ?? "UNKNOWN",
+    };
+  }
+  return regenerateInternal(runId, targets, onProgress);
 }
 
 export async function reopenForRegeneration(runId: string) {
