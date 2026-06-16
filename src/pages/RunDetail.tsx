@@ -350,15 +350,31 @@ function AssumptionCard({ a, onChange, busy, setBusy }: any) {
   );
 }
 
-function ApprovalCard({ ready, runId, busy, reload, setBusy, status, approvedAt }: any) {
+function ApprovalCard({ ready, runId, busy, reload, setBusy, status, approvedAt, onReopen }: any) {
   const [checked, setChecked] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [token, setToken] = useState("");
 
   if (status === "PASS_FINAL") {
-    return <Card><CardContent className="p-4 text-sm">
+    const doReopen = async () => {
+      setBusy(true);
+      try {
+        await reopenForRegeneration(runId);
+        toast.success("Run dibuka kembali untuk regenerasi konten.");
+        await reload();
+        if (onReopen) await onReopen();
+      } catch (e: any) {
+        toast.error(e.message ?? String(e));
+      } finally {
+        setBusy(false);
+      }
+    };
+    return <Card><CardContent className="p-4 text-sm space-y-3">
       <Badge>Disetujui (PASS_FINAL)</Badge>
       <p className="mt-2 text-muted-foreground">Disetujui pada {approvedAt ? new Date(approvedAt).toLocaleString() : "—"}.</p>
+      <Button size="sm" variant="outline" onClick={doReopen} disabled={busy}>
+        Reopen for Content Regeneration
+      </Button>
     </CardContent></Card>;
   }
 
