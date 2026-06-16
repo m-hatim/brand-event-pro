@@ -544,7 +544,8 @@ export async function hardRegenerateFailedModules(
   const bundle = await getRunBundle(runId);
   // Identify failed modules: explicit "failed" status, or modules referenced in latest QC errors by file name
   const failedByStatus = (bundle.modules ?? []).filter((m: any) => m.status === "failed" || m.validation === "FAIL");
-  const qcErrors: string[] = bundle.qc?.payload?.errors ?? [];
+  const qcPayload = (bundle.qc?.payload as any) ?? {};
+  const qcErrors: string[] = Array.isArray(qcPayload.errors) ? qcPayload.errors : [];
   const filesFromQc = new Set<string>();
   for (const e of qcErrors) {
     for (const m of bundle.modules ?? []) {
