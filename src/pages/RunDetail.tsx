@@ -345,7 +345,7 @@ export default function RunDetail() {
 
         {/* TAB 8 — APPROVAL */}
         <TabsContent value="approval" className="mt-4">
-          <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} onReopen={() => runGenerate(true)} />
+          <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} onReopen={() => runRegenerate("full")} />
         </TabsContent>
       </Tabs>
     </AppShell>
