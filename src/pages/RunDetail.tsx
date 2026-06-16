@@ -100,7 +100,7 @@ export default function RunDetail() {
             <>
               <div className="grid md:grid-cols-2 gap-3">
                 {Object.entries(bundle.architecture.payload as Record<string, string>).map(([k, v]) => (
-                  <Card key={k}><CardHeader><CardTitle className="text-sm capitalize">{k.replaceAll("_", " ")}</CardTitle></CardHeader>
+                  <Card key={k}><CardHeader><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader>
                     <CardContent className="text-sm whitespace-pre-wrap">{v}</CardContent></Card>
                 ))}
               </div>
