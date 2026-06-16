@@ -75,7 +75,6 @@ export default function Settings() {
             <Input type="password" placeholder="Password baru" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
             <Button onClick={changePw}>Update</Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">Password staging awal: Ai@belajar1 — sebaiknya diubah setelah login pertama.</p>
         </CardContent></Card>
       </div>
     </AppShell>
