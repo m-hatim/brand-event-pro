@@ -21,12 +21,14 @@ import {
   generateAllRemainingFilesWithProgress,
   generateArchitectureForRun,
   getRunBundle,
+  hardRegenerateFailedModules,
   regeneratePackageContent,
   reopenForRegeneration,
   rejectAssumption,
   retryModule,
   stopRun,
 } from "@/lib/runner/api";
+import type { RegenerateSummary } from "@/lib/runner/api";
 import { CHUNK_STATUS_LABEL, isForbiddenModuleKey, statusLabel } from "@/lib/runner/types";
 
 export default function RunDetail() {
@@ -35,6 +37,7 @@ export default function RunDetail() {
   const [bundle, setBundle] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ i: number; total: number; file: string } | null>(null);
+  const [lastRegen, setLastRegen] = useState<RegenerateSummary | null>(null);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -51,20 +54,35 @@ export default function RunDetail() {
     finally { setBusy(false); }
   };
 
-  const runGenerate = async (force: boolean) => {
+  const runInitialGenerate = async () => {
     setBusy(true);
     setProgress({ i: 0, total: 0, file: "" });
     try {
-      const fn = force ? regeneratePackageContent : (id: string, cb: any) => generateAllRemainingFilesWithProgress(id, cb);
-      await fn(r!.id, (i, total, file) => setProgress({ i, total, file }));
-      toast.success(force ? "Regenerate selesai." : "Generate selesai.");
+      await generateAllRemainingFilesWithProgress(r!.id, (i, total, file) => setProgress({ i, total, file }));
+      toast.success("Generate selesai.");
       await reload();
-    } catch (e: any) {
-      toast.error(e.message ?? String(e));
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
+    } catch (e: any) { toast.error(e.message ?? String(e)); }
+    finally { setBusy(false); setProgress(null); }
+  };
+
+  const runRegenerate = async (mode: "full" | "hard") => {
+    setBusy(true);
+    setProgress({ i: 0, total: 0, file: "" });
+    setLastRegen(null);
+    try {
+      const fn = mode === "hard" ? hardRegenerateFailedModules : regeneratePackageContent;
+      const summary = await fn(r!.id, (i, total, file) => setProgress({ i, total, file }));
+      setLastRegen(summary);
+      if (summary.filesUpdated.length === 0) {
+        toast.error("Regenerate gagal: tidak ada file yang berhasil diperbarui.");
+      } else if (summary.blockingAfter > 0) {
+        toast.warning("Regenerate selesai, tetapi QC masih menemukan error. Cek detail error.");
+      } else {
+        toast.success("Regenerate selesai.");
+      }
+      await reload();
+    } catch (e: any) { toast.error(e.message ?? String(e)); }
+    finally { setBusy(false); setProgress(null); }
   };
 
   if (!bundle) return <AppShell><p>Memuat…</p></AppShell>;
@@ -174,17 +192,33 @@ export default function RunDetail() {
         <TabsContent value="pembuat" className="mt-4 space-y-3">
           <Card><CardContent className="p-4">
             <div className="flex flex-wrap gap-2">
-              <Button size="lg" onClick={() => runGenerate(false)} disabled={busy || modules.length === 0}>
+              <Button size="lg" onClick={runInitialGenerate} disabled={busy || modules.length === 0}>
                 Generate Semua File
               </Button>
-              <Button size="lg" variant="outline" onClick={() => runGenerate(true)} disabled={busy || modules.length === 0}>
+              <Button size="lg" variant="outline" onClick={() => runRegenerate("full")} disabled={busy || modules.length === 0}>
                 Regenerate Package Content
+              </Button>
+              <Button size="lg" variant="secondary" onClick={() => runRegenerate("hard")} disabled={busy || modules.length === 0}>
+                Hard Regenerate Failed Modules
               </Button>
             </div>
             {progress && progress.total > 0 && (
               <div className="mt-3 text-xs text-muted-foreground">
                 Generating file {progress.i} of {progress.total}: <span className="font-mono">{progress.file}</span>
               </div>
+            )}
+            {lastRegen && (
+              <Card className="mt-3 border-dashed">
+                <CardHeader><CardTitle className="text-sm">Regenerate Summary</CardTitle></CardHeader>
+                <CardContent className="text-xs space-y-1">
+                  <div>Modules regenerated: <b>{lastRegen.modulesRegenerated}</b></div>
+                  <div>Files updated: {lastRegen.filesUpdated.length ? <span className="font-mono">{lastRegen.filesUpdated.join(", ")}</span> : <i>tidak ada</i>}</div>
+                  <div>QC rerun: <b>{lastRegen.qcRerun ? "yes" : "no"}</b></div>
+                  <div>Blocking errors before: <b>{lastRegen.blockingBefore}</b></div>
+                  <div>Blocking errors after: <b>{lastRegen.blockingAfter}</b></div>
+                  <div>Run status after: <b>{statusLabel(lastRegen.runStatus as any)}</b></div>
+                </CardContent>
+              </Card>
             )}
             <div className="mt-3 text-sm grid grid-cols-2 sm:grid-cols-5 gap-2">
               <Stat label="Total" value={modules.length} />
@@ -296,9 +330,14 @@ export default function RunDetail() {
                 <CollapsibleContent><pre className="text-xs bg-muted p-3 rounded-md">{JSON.stringify(bundle.qc.payload.checks, null, 2)}</pre></CollapsibleContent>
               </Collapsible>
               {bundle.qc.blocking_errors > 0 && (
-                <Button size="sm" variant="outline" onClick={() => runGenerate(true)} disabled={busy}>
-                  Regenerate Package Content
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => runRegenerate("full")} disabled={busy}>
+                    Regenerate Package Content
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => runRegenerate("hard")} disabled={busy}>
+                    Hard Regenerate Failed Modules
+                  </Button>
+                </div>
               )}
             </CardContent></Card>
           ) : <p className="text-sm text-muted-foreground">QC belum tersedia. Jalankan Generate Semua File dulu.</p>}
