@@ -964,11 +964,13 @@ export function generateModuleContent(args: {
 }
 
 // ---------- QC ----------
+// True placeholder content only — must NOT match negative reminders in checklists.
 const PLACEHOLDER_PATTERNS = [
   /Konten otomatis untuk modul/i,
   /Lorem ipsum/i,
-  /TODO:/i,
-  /placeholder/i,
+  /\bTODO:/,
+  /\{\{placeholder\}\}/i,
+  /<placeholder>/i,
 ];
 
 export function runQC(args: {
@@ -1034,11 +1036,16 @@ export function runQC(args: {
     }
   }
 
-  // Forbidden claims
+  // Forbidden claims — ignore matches inside checklist/negation lines like
+  // "Tidak menjanjikan ...", "Jangan klaim ...", quoted reminders, etc.
+  const NEGATION_RE = /(tidak|jangan|hindari|bukan|never|do not|don't|no\s+)/i;
   for (const m of args.modules) {
     if (!m.content) continue;
+    const lines = m.content.split(/\n/);
     for (const f of FORBIDDEN_CLAIMS) {
-      if (new RegExp(f, "i").test(m.content)) {
+      const re = new RegExp(f, "i");
+      const offending = lines.find((ln) => re.test(ln) && !NEGATION_RE.test(ln));
+      if (offending) {
         warnings.push(`Klaim terlarang "${f}" terdeteksi di ${m.file_name}.`);
       }
     }
