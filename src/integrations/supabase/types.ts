@@ -14,245 +14,585 @@ export type Database = {
   }
   public: {
     Tables: {
-      email_templates: {
+      architecture_outputs: {
         Row: {
-          body: string
-          enabled: boolean
-          event_id: string
+          approved: boolean
+          created_at: string
           id: string
-          subject: string
-          template_type: Database["public"]["Enums"]["email_template_type"]
+          owner_id: string
+          payload: Json
+          run_id: string
+          updated_at: string
         }
         Insert: {
-          body?: string
-          enabled?: boolean
-          event_id: string
+          approved?: boolean
+          created_at?: string
           id?: string
-          subject?: string
-          template_type: Database["public"]["Enums"]["email_template_type"]
+          owner_id: string
+          payload?: Json
+          run_id: string
+          updated_at?: string
         }
         Update: {
-          body?: string
-          enabled?: boolean
-          event_id?: string
+          approved?: boolean
+          created_at?: string
           id?: string
-          subject?: string
-          template_type?: Database["public"]["Enums"]["email_template_type"]
+          owner_id?: string
+          payload?: Json
+          run_id?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "email_templates_event_id_fkey"
-            columns: ["event_id"]
+            foreignKeyName: "architecture_outputs_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "events"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
       }
-      events: {
+      assumptions: {
         Row: {
-          background_image_url: string | null
-          capacity: number | null
-          color_mode: string | null
+          correction: string | null
+          created_at: string
+          id: string
+          impact: string
+          owner_id: string
+          run_id: string
+          status: string
+          text: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          correction?: string | null
+          created_at?: string
+          id?: string
+          impact?: string
+          owner_id: string
+          run_id: string
+          status?: string
+          text: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          correction?: string | null
+          created_at?: string
+          id?: string
+          impact?: string
+          owner_id?: string
+          run_id?: string
+          status?: string
+          text?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assumptions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      batch_chunks: {
+        Row: {
+          acked: boolean
+          chunk_index: number
+          created_at: string
+          id: string
+          module_id: string | null
+          owner_id: string
+          run_id: string
+          status: string
+          updated_at: string
+          validation: string
+        }
+        Insert: {
+          acked?: boolean
+          chunk_index: number
+          created_at?: string
+          id?: string
+          module_id?: string | null
+          owner_id: string
+          run_id: string
+          status?: string
+          updated_at?: string
+          validation?: string
+        }
+        Update: {
+          acked?: boolean
+          chunk_index?: number
+          created_at?: string
+          id?: string
+          module_id?: string | null
+          owner_id?: string
+          run_id?: string
+          status?: string
+          updated_at?: string
+          validation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "batch_chunks_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "output_modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "batch_chunks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      description_corrections: {
+        Row: {
+          confirmed: boolean
+          corrected: string
+          created_at: string
+          id: string
+          original: string
+          owner_id: string
+          run_id: string | null
+        }
+        Insert: {
+          confirmed?: boolean
+          corrected: string
+          created_at?: string
+          id?: string
+          original: string
+          owner_id: string
+          run_id?: string | null
+        }
+        Update: {
+          confirmed?: boolean
+          corrected?: string
+          created_at?: string
+          id?: string
+          original?: string
+          owner_id?: string
+          run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "description_corrections_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exports: {
+        Row: {
+          created_at: string
+          id: string
+          owner_id: string
+          payload: Json
+          run_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_id: string
+          payload?: Json
+          run_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          payload?: Json
+          run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exports_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manifests: {
+        Row: {
+          created_at: string
+          id: string
+          owner_id: string
+          payload: Json
+          run_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_id: string
+          payload?: Json
+          run_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          payload?: Json
+          run_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manifests_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_bundle_results: {
+        Row: {
+          created_at: string
+          id: string
+          marketplace: string
+          owner_id: string
+          payload: Json
+          run_id: string
+          validation: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          marketplace: string
+          owner_id: string
+          payload?: Json
+          run_id: string
+          validation?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          marketplace?: string
+          owner_id?: string
+          payload?: Json
+          run_id?: string
+          validation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_bundle_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_selections: {
+        Row: {
+          created_at: string
+          id: string
+          marketplace: string
+          owner_id: string
+          run_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          marketplace: string
+          owner_id: string
+          run_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          marketplace?: string
+          owner_id?: string
+          run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_selections_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      output_modules: {
+        Row: {
+          content: string | null
+          created_at: string
+          file_name: string
+          id: string
+          module_key: string
+          owner_id: string
+          run_id: string
+          status: string
+          updated_at: string
+          validation: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          file_name: string
+          id?: string
+          module_key: string
+          owner_id: string
+          run_id: string
+          status?: string
+          updated_at?: string
+          validation?: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          file_name?: string
+          id?: string
+          module_key?: string
+          owner_id?: string
+          run_id?: string
+          status?: string
+          updated_at?: string
+          validation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "output_modules_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qc_results: {
+        Row: {
+          blocking_errors: number
+          created_at: string
+          id: string
+          owner_id: string
+          payload: Json
+          run_id: string
+          updated_at: string
+        }
+        Insert: {
+          blocking_errors?: number
+          created_at?: string
+          id?: string
+          owner_id: string
+          payload?: Json
+          run_id: string
+          updated_at?: string
+        }
+        Update: {
+          blocking_errors?: number
+          created_at?: string
+          id?: string
+          owner_id?: string
+          payload?: Json
+          run_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qc_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      redacted_logs: {
+        Row: {
+          created_at: string
+          id: string
+          level: string
+          message: string
+          owner_id: string
+          run_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          level?: string
+          message: string
+          owner_id: string
+          run_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          level?: string
+          message?: string
+          owner_id?: string
+          run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "redacted_logs_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      runs: {
+        Row: {
+          adapter: string
+          approval_token: string | null
+          approved_at: string | null
+          created_at: string
+          generation_mode: string
+          id: string
+          marketplaces: string[]
+          owner_id: string
+          run_request_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          adapter: string
+          approval_token?: string | null
+          approved_at?: string | null
+          created_at?: string
+          generation_mode?: string
+          id?: string
+          marketplaces?: string[]
+          owner_id: string
+          run_request_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          adapter?: string
+          approval_token?: string | null
+          approved_at?: string | null
+          created_at?: string
+          generation_mode?: string
+          id?: string
+          marketplaces?: string[]
+          owner_id?: string
+          run_request_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      seller_inputs: {
+        Row: {
+          audience: string | null
+          brand: string | null
+          confirmed_product_description: string | null
+          corrected_description: string | null
           created_at: string
           description: string | null
-          event_date: string | null
-          event_end_date: string | null
-          event_type: string | null
           id: string
-          location_type: string | null
-          location_value: string | null
-          logo_url: string | null
-          name: string
-          primary_color: string | null
-          registration_deadline: string | null
-          registration_limit: number | null
-          requires_approval: boolean | null
-          slug: string
-          status: Database["public"]["Enums"]["event_status"]
-          template: string | null
-          ticket_price: number | null
-          timezone: string | null
+          key_anchors: string[]
+          language: string | null
+          license: string | null
+          niche: string | null
+          original_description: string | null
+          owner_id: string
+          prompt_count: number | null
+          run_id: string
+          target_market: string | null
+          target_price: string | null
+          tone: string | null
           updated_at: string
-          user_id: string
         }
         Insert: {
-          background_image_url?: string | null
-          capacity?: number | null
-          color_mode?: string | null
+          audience?: string | null
+          brand?: string | null
+          confirmed_product_description?: string | null
+          corrected_description?: string | null
           created_at?: string
           description?: string | null
-          event_date?: string | null
-          event_end_date?: string | null
-          event_type?: string | null
           id?: string
-          location_type?: string | null
-          location_value?: string | null
-          logo_url?: string | null
-          name: string
-          primary_color?: string | null
-          registration_deadline?: string | null
-          registration_limit?: number | null
-          requires_approval?: boolean | null
-          slug: string
-          status?: Database["public"]["Enums"]["event_status"]
-          template?: string | null
-          ticket_price?: number | null
-          timezone?: string | null
+          key_anchors?: string[]
+          language?: string | null
+          license?: string | null
+          niche?: string | null
+          original_description?: string | null
+          owner_id: string
+          prompt_count?: number | null
+          run_id: string
+          target_market?: string | null
+          target_price?: string | null
+          tone?: string | null
           updated_at?: string
-          user_id: string
         }
         Update: {
-          background_image_url?: string | null
-          capacity?: number | null
-          color_mode?: string | null
+          audience?: string | null
+          brand?: string | null
+          confirmed_product_description?: string | null
+          corrected_description?: string | null
           created_at?: string
           description?: string | null
-          event_date?: string | null
-          event_end_date?: string | null
-          event_type?: string | null
           id?: string
-          location_type?: string | null
-          location_value?: string | null
-          logo_url?: string | null
-          name?: string
-          primary_color?: string | null
-          registration_deadline?: string | null
-          registration_limit?: number | null
-          requires_approval?: boolean | null
-          slug?: string
-          status?: Database["public"]["Enums"]["event_status"]
-          template?: string | null
-          ticket_price?: number | null
-          timezone?: string | null
+          key_anchors?: string[]
+          language?: string | null
+          license?: string | null
+          niche?: string | null
+          original_description?: string | null
+          owner_id?: string
+          prompt_count?: number | null
+          run_id?: string
+          target_market?: string | null
+          target_price?: string | null
+          tone?: string | null
           updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      form_fields: {
-        Row: {
-          event_id: string
-          field_type: string
-          id: string
-          label: string
-          placeholder: string | null
-          position: number
-          required: boolean
-        }
-        Insert: {
-          event_id: string
-          field_type?: string
-          id?: string
-          label: string
-          placeholder?: string | null
-          position?: number
-          required?: boolean
-        }
-        Update: {
-          event_id?: string
-          field_type?: string
-          id?: string
-          label?: string
-          placeholder?: string | null
-          position?: number
-          required?: boolean
         }
         Relationships: [
           {
-            foreignKeyName: "form_fields_event_id_fkey"
-            columns: ["event_id"]
+            foreignKeyName: "seller_inputs_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "events"
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]
       }
-      profiles: {
+      user_settings: {
         Row: {
-          avatar_url: string | null
-          company: string | null
-          company_description: string | null
-          company_slug: string | null
+          api_mode_enabled: boolean
           created_at: string
-          full_name: string | null
-          id: string
-          social_links: Json | null
+          default_generation_mode: string
+          low_model_mode: boolean
+          output_language_default: string
+          redacted_logs_enabled: boolean
           updated_at: string
-          website: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          company?: string | null
-          company_description?: string | null
-          company_slug?: string | null
-          created_at?: string
-          full_name?: string | null
-          id: string
-          social_links?: Json | null
-          updated_at?: string
-          website?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          company?: string | null
-          company_description?: string | null
-          company_slug?: string | null
-          created_at?: string
-          full_name?: string | null
-          id?: string
-          social_links?: Json | null
-          updated_at?: string
-          website?: string | null
-        }
-        Relationships: []
-      }
-      registrations: {
-        Row: {
-          created_at: string
-          data: Json
-          event_id: string
-          id: string
-          status: Database["public"]["Enums"]["registration_status"]
-        }
-        Insert: {
-          created_at?: string
-          data?: Json
-          event_id: string
-          id?: string
-          status?: Database["public"]["Enums"]["registration_status"]
-        }
-        Update: {
-          created_at?: string
-          data?: Json
-          event_id?: string
-          id?: string
-          status?: Database["public"]["Enums"]["registration_status"]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "registrations_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_roles: {
-        Row: {
-          id: string
-          role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
-          id?: string
-          role: Database["public"]["Enums"]["app_role"]
+          api_mode_enabled?: boolean
+          created_at?: string
+          default_generation_mode?: string
+          low_model_mode?: boolean
+          output_language_default?: string
+          redacted_logs_enabled?: boolean
+          updated_at?: string
           user_id: string
         }
         Update: {
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          api_mode_enabled?: boolean
+          created_at?: string
+          default_generation_mode?: string
+          low_model_mode?: boolean
+          output_language_default?: string
+          redacted_logs_enabled?: boolean
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -262,24 +602,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_registration_count: { Args: { p_event_id: string }; Returns: number }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
-      register_for_event: {
-        Args: { p_data: Json; p_event_id: string }
-        Returns: string
-      }
+      [_ in never]: never
     }
     Enums: {
-      app_role: "admin" | "editor" | "viewer"
       email_template_type: "confirmation" | "reminder" | "followup"
-      event_status: "draft" | "live" | "past"
-      registration_status: "registered" | "checked_in" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -407,10 +733,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "editor", "viewer"],
       email_template_type: ["confirmation", "reminder", "followup"],
-      event_status: ["draft", "live", "past"],
-      registration_status: ["registered", "checked_in", "cancelled"],
     },
   },
 } as const
