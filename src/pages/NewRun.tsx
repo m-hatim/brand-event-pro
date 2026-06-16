@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/runner/AppShell";
 import { Button } from "@/components/ui/button";
@@ -13,37 +13,82 @@ import { ADAPTERS, AdapterId, LANGUAGES, LICENSES, MARKETPLACES, PROMPT_COUNTS, 
 import { createRun, generateDescriptionCorrection } from "@/lib/runner/api";
 import { generateKeyAnchors } from "@/lib/runner/engine";
 import { toast } from "sonner";
+import { CheckCircle2, Circle } from "lucide-react";
+
+const DRAFT_KEY = "ppf_v3_4_new_run_draft";
+
+type DraftShape = {
+  step: 1 | 2 | 3;
+  adapter: AdapterId | "";
+  form: {
+    brand: string; language: string; target_market: string;
+    niche: string; audience: string; description: string;
+    prompt_count: number; tone: string; license: string; target_price: string;
+  };
+  marketplaces: string[];
+  anchorsText: string;
+  corrected: string | null;
+  editedCorr: string;
+  confirmedDesc: string | null;
+};
+
+const DEFAULT_DRAFT: DraftShape = {
+  step: 1,
+  adapter: "",
+  form: {
+    brand: "", language: "Indonesia", target_market: "Indonesia",
+    niche: "", audience: "", description: "",
+    prompt_count: 10, tone: "Friendly", license: "Personal & Commercial", target_price: "",
+  },
+  marketplaces: [],
+  anchorsText: "",
+  corrected: null,
+  editedCorr: "",
+  confirmedDesc: null,
+};
+
+function loadDraft(): DraftShape {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return DEFAULT_DRAFT;
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_DRAFT, ...parsed, form: { ...DEFAULT_DRAFT.form, ...(parsed.form ?? {}) } };
+  } catch { return DEFAULT_DRAFT; }
+}
 
 export default function NewRun() {
   const nav = useNavigate();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [adapter, setAdapter] = useState<AdapterId | "">("");
-  const [form, setForm] = useState({
-    brand: "",
-    language: "Indonesia",
-    target_market: "Indonesia",
-    niche: "",
-    audience: "",
-    description: "",
-    prompt_count: 10 as number,
-    tone: "Friendly",
-    license: "Personal & Commercial",
-    target_price: "",
-  });
-  const [marketplaces, setMarketplaces] = useState<string[]>([]);
-  const [anchors, setAnchors] = useState<string[]>([]);
-  const [anchorsText, setAnchorsText] = useState("");
-
-  // description correction state
-  const [corrected, setCorrected] = useState<string | null>(null);
+  const initial = useRef<DraftShape>(loadDraft()).current;
+  const [step, setStep] = useState<1 | 2 | 3>(initial.step);
+  const [adapter, setAdapter] = useState<AdapterId | "">(initial.adapter);
+  const [form, setForm] = useState(initial.form);
+  const [marketplaces, setMarketplaces] = useState<string[]>(initial.marketplaces);
+  const [anchorsText, setAnchorsText] = useState(initial.anchorsText);
+  const [corrected, setCorrected] = useState<string | null>(initial.corrected);
   const [editingCorr, setEditingCorr] = useState(false);
-  const [editedCorr, setEditedCorr] = useState("");
-  const [confirmedDesc, setConfirmedDesc] = useState<string | null>(null);
+  const [editedCorr, setEditedCorr] = useState(initial.editedCorr);
+  const [confirmedDesc, setConfirmedDesc] = useState<string | null>(initial.confirmedDesc);
   const [busy, setBusy] = useState(false);
+  const hydrated = useRef(false);
+
+  // Autosave draft
+  useEffect(() => {
+    if (!hydrated.current) { hydrated.current = true; return; }
+    const data: DraftShape = { step, adapter, form, marketplaces, anchorsText, corrected, editedCorr, confirmedDesc };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch {}
+  }, [step, adapter, form, marketplaces, anchorsText, corrected, editedCorr, confirmedDesc]);
 
   const adapterLabel = useMemo(() => ADAPTERS.find((a) => a.id === adapter)?.label, [adapter]);
 
   function update<K extends keyof typeof form>(k: K, v: any) { setForm((f) => ({ ...f, [k]: v })); }
+
+  function onDescriptionChange(v: string) {
+    update("description", v);
+    if (confirmedDesc !== null) {
+      // user edited the original after confirming — require re-confirm
+      setConfirmedDesc(null);
+    }
+  }
 
   async function handleCorrect() {
     if (!form.description.trim()) return toast.error("Tulis deskripsi singkat dulu.");
@@ -56,24 +101,41 @@ export default function NewRun() {
     } finally { setBusy(false); }
   }
 
-  function handleAutoAnchors() {
-    const arr = generateKeyAnchors({
+  function computeAnchors() {
+    return generateKeyAnchors({
       niche: form.niche, audience: form.audience,
-      confirmedDescription: confirmedDesc ?? "",
+      confirmedDescription: confirmedDesc ?? form.description ?? "",
       marketplaces, tone: form.tone, adapter: adapter as string,
     });
-    setAnchors(arr);
+  }
+  function handleAutoAnchors() {
+    const arr = computeAnchors();
     setAnchorsText(arr.join("\n"));
+    if (arr.length > 0) toast.success("Kata kunci produk dibuat otomatis.");
   }
 
-  const canNextFromStep2 =
-    form.brand.trim() && form.niche.trim() && form.audience.trim() &&
-    form.description.trim() && !!confirmedDesc && marketplaces.length > 0;
+  const currentAnchors = anchorsText.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const anchorsOk = currentAnchors.length >= 3 || (form.niche.trim() && form.audience.trim() && form.description.trim());
+
+  const checklist = [
+    { label: "Jenis produk dipilih", ok: !!adapter },
+    { label: "Nama seller/brand terisi", ok: !!form.brand.trim() },
+    { label: "Niche produk terisi", ok: !!form.niche.trim() },
+    { label: "Target audiens terisi", ok: !!form.audience.trim() },
+    { label: "Deskripsi sudah dikonfirmasi", ok: !!confirmedDesc },
+    { label: "Minimal 3 kata kunci (atau dapat dibuat otomatis)", ok: !!anchorsOk },
+    { label: "Minimal 1 marketplace dipilih", ok: marketplaces.length > 0 },
+  ];
+  const canNextFromStep2 = checklist.every((c) => c.ok);
 
   async function submit() {
     setBusy(true);
     try {
-      const finalAnchors = (anchorsText.split(/\n+/).map((s) => s.trim()).filter(Boolean));
+      let finalAnchors = currentAnchors;
+      if (finalAnchors.length < 3) {
+        finalAnchors = computeAnchors();
+        toast.success("Kata kunci produk dibuat otomatis.");
+      }
       const run = await createRun({
         adapter: adapter as string,
         brand: form.brand,
@@ -92,17 +154,48 @@ export default function NewRun() {
         corrected_description: corrected ?? "",
         confirmed_product_description: confirmedDesc ?? "",
       });
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       toast.success("Run dibuat.");
       nav(`/runs/${run.id}`);
     } catch (e: any) {
-      toast.error(e.message ?? String(e));
+      toast.error("Gagal membuat run. " + (e?.message ?? ""));
     } finally { setBusy(false); }
+  }
+
+  function handleSaveDraft() {
+    const data: DraftShape = { step, adapter, form, marketplaces, anchorsText, corrected, editedCorr, confirmedDesc };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); toast.success("Draft tersimpan."); } catch { toast.error("Gagal menyimpan draft."); }
+  }
+  function handleResetForm() {
+    if (!confirm("Reset form? Semua isian akan dihapus.")) return;
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setStep(1); setAdapter(""); setForm(DEFAULT_DRAFT.form);
+    setMarketplaces([]); setAnchorsText("");
+    setCorrected(null); setEditedCorr(""); setConfirmedDesc(null);
+    toast.success("Form direset.");
+  }
+  function confirmCorrected() {
+    setConfirmedDesc(editedCorr);
+    toast.success("Deskripsi dikonfirmasi.");
+  }
+  function confirmRaw() {
+    if (!form.description.trim()) return toast.error("Tulis deskripsi singkat dulu.");
+    setConfirmedDesc(form.description);
+    toast.success("Deskripsi dikonfirmasi (tanpa dirapikan).");
   }
 
   return (
     <AppShell>
-      <h2 className="text-2xl font-bold mb-1">Buat Run Baru</h2>
-      <p className="text-sm text-muted-foreground mb-4">Mode: <Badge variant="secondary">Upload Manual Saja</Badge></p>
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div>
+          <h2 className="text-2xl font-bold mb-1">Buat Run Baru</h2>
+          <p className="text-sm text-muted-foreground">Mode: <Badge variant="secondary">Upload Manual Saja</Badge></p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleSaveDraft}>Simpan Draft</Button>
+          <Button variant="ghost" size="sm" onClick={handleResetForm}>Reset Form</Button>
+        </div>
+      </div>
 
       {step === 1 && (
         <Card>
@@ -131,7 +224,11 @@ export default function NewRun() {
             <div className="text-sm text-muted-foreground">Adapter: <b>{adapterLabel}</b></div>
 
             <div className="grid md:grid-cols-2 gap-3">
-              <div><Label>Nama Seller / Brand</Label><Input value={form.brand} onChange={(e) => update("brand", e.target.value)} /></div>
+              <div>
+                <Label>Nama Seller / Brand</Label>
+                <Input value={form.brand} onChange={(e) => update("brand", e.target.value)} placeholder="contoh: Assetflow" />
+                <p className="text-xs text-muted-foreground mt-1">Isi nama brand/seller saja. Contoh: Assetflow. Jangan isi niche produk di sini.</p>
+              </div>
               <div><Label>Bahasa Output</Label>
                 <Select value={form.language} onValueChange={(v) => update("language", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -178,11 +275,16 @@ export default function NewRun() {
 
             <div>
               <Label>Deskripsi Singkat Produk</Label>
-              <Textarea rows={4} value={form.description} onChange={(e) => { update("description", e.target.value); setCorrected(null); setConfirmedDesc(null); }}
+              <Textarea rows={4} value={form.description} onChange={(e) => onDescriptionChange(e.target.value)}
                 placeholder="Tulis deskripsi singkat seperti yang biasa Anda tulis. Sistem akan merapikannya." />
-              <div className="flex gap-2 mt-2">
+              <div className="flex flex-wrap gap-2 mt-2 items-center">
                 <Button variant="outline" type="button" onClick={handleCorrect} disabled={busy}>Rapikan Deskripsi Otomatis</Button>
-                {confirmedDesc && <Badge variant="secondary">Deskripsi telah dikonfirmasi</Badge>}
+                <Button variant="ghost" type="button" onClick={confirmRaw} disabled={busy}>Gunakan Deskripsi Tanpa Dirapikan</Button>
+                {confirmedDesc ? (
+                  <Badge variant="secondary">Deskripsi sudah dikonfirmasi</Badge>
+                ) : corrected ? (
+                  <span className="text-xs text-amber-600">Deskripsi berubah. Konfirmasi ulang dulu.</span>
+                ) : null}
               </div>
 
               {corrected && (
@@ -204,7 +306,7 @@ export default function NewRun() {
                           </>
                         ) : (
                           <>
-                            <Button size="sm" onClick={() => setConfirmedDesc(editedCorr)}>Gunakan Deskripsi Ini</Button>
+                            <Button size="sm" onClick={confirmCorrected}>Gunakan Deskripsi Ini</Button>
                             <Button size="sm" variant="outline" onClick={() => setEditingCorr(true)}>Edit Hasil</Button>
                             <Button size="sm" variant="ghost" onClick={handleCorrect}>Buat Ulang</Button>
                           </>
@@ -221,11 +323,11 @@ export default function NewRun() {
                 placeholder="Satu kata kunci per baris. Klik Buat Otomatis untuk mengisi otomatis." />
               <div className="flex gap-2 mt-2">
                 <Button variant="outline" type="button" onClick={handleAutoAnchors}>Buat Otomatis</Button>
-                <span className="text-xs text-muted-foreground self-center">Jika kosong/&lt;3, akan diisi otomatis saat submit.</span>
+                <span className="text-xs text-muted-foreground self-center">Kata kunci akan dibuat otomatis dari niche dan deskripsi jika kosong.</span>
               </div>
-              {anchors.length > 0 && (
+              {currentAnchors.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {anchorsText.split(/\n+/).filter(Boolean).map((a, i) => <Badge key={i} variant="secondary">{a}</Badge>)}
+                  {currentAnchors.map((a, i) => <Badge key={i} variant="secondary">{a}</Badge>)}
                 </div>
               )}
             </div>
@@ -245,9 +347,30 @@ export default function NewRun() {
               <p className="text-xs text-muted-foreground mt-2">Catatan: tidak ada integrasi API. Semua listing untuk upload manual.</p>
             </div>
 
+            <div className="rounded-md border p-3 bg-muted/40">
+              <div className="text-sm font-medium mb-2">Checklist sebelum lanjut</div>
+              <ul className="space-y-1">
+                {checklist.map((c) => (
+                  <li key={c.label} className="flex items-center gap-2 text-sm">
+                    {c.ok ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Circle className="w-4 h-4 text-muted-foreground" />}
+                    <span className={c.ok ? "" : "text-muted-foreground"}>{c.label}</span>
+                  </li>
+                ))}
+              </ul>
+              {!canNextFromStep2 && <p className="text-xs text-muted-foreground mt-2">Form belum lengkap. Cek checklist di atas.</p>}
+            </div>
+
             <div className="flex justify-between">
               <Button variant="ghost" onClick={() => setStep(1)}>Kembali</Button>
-              <Button onClick={() => setStep(3)} disabled={!canNextFromStep2}>Lanjut Review</Button>
+              <Button onClick={() => {
+                if (!canNextFromStep2) { toast.error("Form belum lengkap. Cek checklist di bawah."); return; }
+                if (currentAnchors.length < 3) {
+                  const arr = computeAnchors();
+                  setAnchorsText(arr.join("\n"));
+                  if (arr.length > 0) toast.success("Kata kunci produk dibuat otomatis.");
+                }
+                setStep(3);
+              }} disabled={!canNextFromStep2}>Lanjut Review</Button>
             </div>
           </CardContent>
         </Card>
@@ -272,8 +395,8 @@ export default function NewRun() {
             <div>
               <b>Kata Kunci Produk:</b>
               <div className="flex flex-wrap gap-1 mt-1">
-                {anchorsText.split(/\n+/).filter(Boolean).map((a, i) => <Badge key={i} variant="secondary">{a}</Badge>)}
-                {anchorsText.split(/\n+/).filter(Boolean).length < 3 && (
+                {currentAnchors.map((a, i) => <Badge key={i} variant="secondary">{a}</Badge>)}
+                {currentAnchors.length < 3 && (
                   <span className="text-xs text-muted-foreground self-center">Akan dilengkapi otomatis saat submit.</span>
                 )}
               </div>
