@@ -528,6 +528,49 @@ function promptIndexCsv(seller: any, adapter: ResolvedAdapter): string {
 }
 
 function usageGuide(seller: any, adapter: ResolvedAdapter): string {
+  if (adapter === "CODING_AUTOMATION") {
+    return [
+      `# Usage Guide — Coding & Automation`,
+      ``,
+      `Panduan pemakaian paket prompt fullstack/web automation untuk niche **${normalizeText(seller.niche || "")}**.`,
+      ``,
+      `## Cara memakai prompt pack`,
+      `Buka 02_PromptBook.md, pilih prompt sesuai tahap kerja (discovery, spec, arsitektur, frontend, backend, automation, ops). Isi variabel \`{{...}}\` dengan konteks Anda.`,
+      ``,
+      `## Cara menyiapkan ide project web`,
+      `Mulai dari pain point user. Tulis satu kalimat masalah, satu kalimat target user, dan satu kalimat hasil yang diharapkan. Pakai prompt "Fullstack Web Product Idea Clarifier".`,
+      ``,
+      `## Cara membuat PRD`,
+      `Pakai prompt "PRD Generator for Web App". Pastikan goal, non-goal, persona, user story, success metric, dan risiko ada di output.`,
+      ``,
+      `## Cara membuat daftar fitur`,
+      `Bedakan fitur MVP vs v2. Pakai bagian "User Flow and Feature Mapping Prompt" untuk memetakan flow dari entry sampai retention.`,
+      ``,
+      `## Cara merancang database`,
+      `Pakai prompt "Database Schema Planning". Output minimal: daftar tabel, kolom, tipe data, PK/FK, dan index. Tambahkan RLS jika menggunakan Postgres terkelola.`,
+      ``,
+      `## Cara merancang auth dan role user`,
+      `Pakai prompt "Auth and User Role Planning". Simpan role pada tabel terpisah (jangan di profil) dan susun permission matrix per resource.`,
+      ``,
+      `## Cara merancang frontend pages`,
+      `Pakai "Frontend Page Structure Generator". Tandai route publik vs auth, komponen reusable, dan state minimum tiap halaman.`,
+      ``,
+      `## Cara merancang backend/API logic`,
+      `Pakai "Backend/API Logic Planner". Catat method, path, input, output, auth, dan side-effect tiap endpoint.`,
+      ``,
+      `## Cara merancang automation workflow`,
+      `Pakai "Automation Workflow Planner". Definisikan trigger, langkah, retry policy, dead-letter, dan observability tiap workflow.`,
+      ``,
+      `## Cara testing dan deployment`,
+      `Pakai "Testing, Deployment, and Maintenance Checklist". Susun checklist pre-launch (unit/integration/E2E), launch (staging, prod, rollback), dan post-launch (monitoring, backup).`,
+      ``,
+      `## Cara memakai hasil untuk pemula dan advanced user`,
+      `Pemula: ikuti urutan prompt dari atas ke bawah dan terima output apa adanya, lalu sesuaikan satu variabel sekali jalan. Advanced: gabungkan beberapa prompt, lakukan iterasi, dan tambahkan konteks domain spesifik tim Anda.`,
+      ``,
+      `## Manual Upload Reminder`,
+      `Semua listing diupload manual oleh seller. Tidak ada publish otomatis.`,
+    ].join("\n");
+  }
   return [
     `# Usage Guide`,
     ``,
@@ -558,7 +601,79 @@ function usageGuide(seller: any, adapter: ResolvedAdapter): string {
   ].join("\n");
 }
 
-function qualityChecklist(seller: any): string {
+function qualityChecklist(seller: any, adapter: ResolvedAdapter = "CUSTOM_GENERIC"): string {
+  if (adapter === "CODING_AUTOMATION") {
+    return [
+      `# Quality Checklist — Coding & Automation`,
+      ``,
+      `## Checklist PRD`,
+      `- [ ] Goal dan non-goal jelas`,
+      `- [ ] Minimal 5 user story format As a / I want / so that`,
+      `- [ ] Success metric terukur`,
+      `- [ ] Asumsi dan risiko tercantum`,
+      ``,
+      `## Checklist fitur`,
+      `- [ ] Fitur MVP vs v2 terpisah`,
+      `- [ ] Tiap fitur punya acceptance criteria`,
+      `- [ ] Prioritas (must/should/could) ditandai`,
+      ``,
+      `## Checklist database schema`,
+      `- [ ] Semua tabel punya primary key`,
+      `- [ ] Foreign key dan relasi konsisten`,
+      `- [ ] Index pada kolom query panas`,
+      `- [ ] Normalisasi wajar (3NF) atau alasan denormalisasi`,
+      ``,
+      `## Checklist auth dan role`,
+      `- [ ] Metode login eksplisit`,
+      `- [ ] Role disimpan di tabel terpisah`,
+      `- [ ] Permission matrix lengkap (CRUD per resource)`,
+      `- [ ] Strategi token/session ditentukan`,
+      ``,
+      `## Checklist frontend UI`,
+      `- [ ] Route publik dan auth dibedakan`,
+      `- [ ] Komponen reusable diidentifikasi`,
+      `- [ ] State minimum dan loading/empty state ada`,
+      ``,
+      `## Checklist backend/API`,
+      `- [ ] Method dan path konsisten`,
+      `- [ ] Validasi input setiap endpoint`,
+      `- [ ] Auth required per endpoint dicatat`,
+      `- [ ] Error response terstandar`,
+      ``,
+      `## Checklist automation workflow`,
+      `- [ ] Trigger jelas (cron, event, webhook)`,
+      `- [ ] Retry policy dan dead-letter ada`,
+      `- [ ] Observability (log, metric, alert) ada`,
+      ``,
+      `## Checklist security`,
+      `- [ ] Tidak ada secret di repo`,
+      `- [ ] RLS atau ACL aktif untuk data sensitif`,
+      `- [ ] Input divalidasi server-side`,
+      `- [ ] Rate limiting pada endpoint kritis`,
+      ``,
+      `## Checklist testing`,
+      `- [ ] Unit test untuk logic inti`,
+      `- [ ] Integration test untuk API utama`,
+      `- [ ] E2E happy path teruji`,
+      ``,
+      `## Checklist deployment`,
+      `- [ ] Pipeline CI/CD berjalan`,
+      `- [ ] Staging mirror produksi`,
+      `- [ ] Rollback plan tertulis`,
+      `- [ ] Monitoring dan backup terjadwal`,
+      ``,
+      `## Checklist klaim aman`,
+      `- [ ] Tidak menjanjikan income`,
+      `- [ ] Tidak menjamin produk laku`,
+      `- [ ] Tidak menjamin angka sales`,
+      `- [ ] Tidak mengklaim status approval marketplace`,
+      ``,
+      `## Branding & Lisensi`,
+      `- [ ] Branding (${seller.brand || "Brand Anda"}) konsisten`,
+      `- [ ] Lisensi (${seller.license || "Personal & Commercial"}) tercantum`,
+      `- [ ] Disclaimer manual upload ada di setiap listing`,
+    ].join("\n");
+  }
   return [
     `# Quality Checklist`,
     ``,
@@ -572,10 +687,10 @@ function qualityChecklist(seller: any): string {
     `- [ ] Sudah membaca kebijakan marketplace tujuan`,
     `- [ ] Harga & lisensi sesuai (${seller.license || "Personal & Commercial"})`,
     `- [ ] Branding (${seller.brand || "Brand Anda"}) konsisten di semua file`,
-    `- [ ] Tidak ada klaim "dijamin laku" / "guaranteed income"`,
+    `- [ ] Tidak menjanjikan income atau menjamin produk laku`,
     ``,
     `## Output Review`,
-    `- [ ] Tidak ada teks "Konten otomatis untuk modul..."`,
+    `- [ ] Tidak ada teks template kosong di seluruh modul`,
     `- [ ] Tidak ada prompt body identik berulang`,
     `- [ ] CSV index valid dan jumlah baris cocok`,
     `- [ ] Anchor utama tercermin di README/PromptBook`,
@@ -719,24 +834,42 @@ function listingGeneric(mp: string, seller: any, adapter: ResolvedAdapter): stri
 }
 
 function bundleIndex(modules: { key: string; file: string }[], marketplaces: string[]): string {
+  const buyerFiles = ["01_README.md", "02_PromptBook.md", "03_PromptIndex.csv", "04_UsageGuide.md", "05_QualityChecklist.md"];
+  const sellerFiles = ["06_ManualUploadGuide.md", ...modules.filter((m) => m.key.startsWith("MARKETPLACE_")).map((m) => m.file), "11_BundleIndex.md"];
   return [
     `# Bundle Index`,
     ``,
-    `## Daftar File & Tujuan`,
+    `## Daftar semua file`,
+    ...modules.map((m) => `- ${m.file}`),
+    ``,
+    `## Fungsi setiap file`,
     ...modules.map((m) => `- **${m.file}** — ${describeFile(m.key)}`),
     ``,
-    `## Recommended Upload Order`,
-    `1. README & UsageGuide (untuk pembeli baca dulu)`,
-    `2. PromptBook + PromptIndex.csv`,
-    `3. QualityChecklist + ManualUploadGuide`,
-    `4. Listing per marketplace (${marketplaces.join(", ") || "—"})`,
+    `## Urutan baca yang disarankan`,
+    `1. 01_README.md — pengantar`,
+    `2. 04_UsageGuide.md — cara pakai`,
+    `3. 02_PromptBook.md — koleksi prompt`,
+    `4. 03_PromptIndex.csv — index ringkas`,
+    `5. 05_QualityChecklist.md — checklist review`,
+    `6. 06_ManualUploadGuide.md — panduan upload`,
+    `7. 10_Listing_*.md — draft listing per marketplace`,
     ``,
-    `## Final Seller Review Checklist`,
+    `## File untuk buyer`,
+    ...buyerFiles.map((f) => `- ${f}`),
+    ``,
+    `## File untuk seller listing`,
+    ...sellerFiles.map((f) => `- ${f}`),
+    ``,
+    `## Reminder upload manual`,
+    `Seluruh proses upload ke ${marketplaces.join(", ") || "marketplace tujuan"} dilakukan secara manual oleh seller. Sistem ini tidak terhubung ke API marketplace manapun dan tidak melakukan publish otomatis.`,
+    ``,
+    `## Final review checklist`,
     `- [ ] Semua file terbaca tanpa error`,
-    `- [ ] Tidak ada placeholder "Konten otomatis..."`,
+    `- [ ] Tidak ada teks template kosong`,
     `- [ ] Tidak ada prompt body duplikat`,
     `- [ ] Lisensi & harga sudah benar`,
     `- [ ] Disclaimer manual upload ada di tiap listing`,
+    `- [ ] Tidak ada klaim income, sales, atau approval marketplace`,
   ].join("\n");
 }
 
@@ -800,7 +933,7 @@ export function generateModuleContent(args: {
       content = usageGuide(seller, adapter);
       break;
     case "05_QualityChecklist":
-      content = qualityChecklist(seller);
+      content = qualityChecklist(seller, adapter);
       break;
     case "06_ManualUploadGuide":
       content = manualUploadGuide(args.marketplaces);
@@ -831,11 +964,13 @@ export function generateModuleContent(args: {
 }
 
 // ---------- QC ----------
+// True placeholder content only — must NOT match negative reminders in checklists.
 const PLACEHOLDER_PATTERNS = [
   /Konten otomatis untuk modul/i,
   /Lorem ipsum/i,
-  /TODO:/i,
-  /placeholder/i,
+  /\bTODO:/,
+  /\{\{placeholder\}\}/i,
+  /<placeholder>/i,
 ];
 
 export function runQC(args: {
@@ -901,11 +1036,16 @@ export function runQC(args: {
     }
   }
 
-  // Forbidden claims
+  // Forbidden claims — ignore matches inside checklist/negation lines like
+  // "Tidak menjanjikan ...", "Jangan klaim ...", quoted reminders, etc.
+  const NEGATION_RE = /(tidak|jangan|hindari|bukan|never|do not|don't|no\s+)/i;
   for (const m of args.modules) {
     if (!m.content) continue;
+    const lines = m.content.split(/\n/);
     for (const f of FORBIDDEN_CLAIMS) {
-      if (new RegExp(f, "i").test(m.content)) {
+      const re = new RegExp(f, "i");
+      const offending = lines.find((ln) => re.test(ln) && !NEGATION_RE.test(ln));
+      if (offending) {
         warnings.push(`Klaim terlarang "${f}" terdeteksi di ${m.file_name}.`);
       }
     }
