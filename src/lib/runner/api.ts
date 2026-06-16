@@ -347,12 +347,7 @@ export async function generateAllRemainingFiles(runId: string) {
     }
   }
 
-  // Marketplace bundle results
-  for (const mp of marketplaces) {
-    await supabase
-      .from("marketplace_bundle_results")
-      .upsert({} as any); // placeholder; insert below
-  }
+  // Marketplace bundle results — clean rebuild
   await supabase.from("marketplace_bundle_results").delete().eq("run_id", runId);
   if (marketplaces.length) {
     const ownerId = bundle.run?.owner_id!;
