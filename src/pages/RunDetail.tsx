@@ -27,6 +27,7 @@ import {
   rejectAssumption,
   retryModule,
   stopRun,
+  upgradePackageToSellReady,
 } from "@/lib/runner/api";
 import type { RegenerateSummary } from "@/lib/runner/api";
 import { CHUNK_STATUS_LABEL, isForbiddenModuleKey, statusLabel } from "@/lib/runner/types";
@@ -89,7 +90,8 @@ export default function RunDetail() {
   if (!bundle.run) return <AppShell><p>Run tidak ditemukan.</p></AppShell>;
 
   const r = bundle.run;
-  const ready = r.status === "READY_FOR_SELLER_REVIEW";
+  const qcPayload = (bundle.qc?.payload ?? {}) as any;
+  const ready = r.status === "READY_FOR_SELLER_REVIEW" && (qcPayload.score ?? 0) >= 85 && (bundle.qc?.blocking_errors ?? 1) === 0;
   const modules = bundle.modules as any[];
   const chunks = bundle.chunks as any[];
   const completed = modules.filter((m) => m.status === "acked").length;
@@ -200,6 +202,20 @@ export default function RunDetail() {
               </Button>
               <Button size="lg" variant="secondary" onClick={() => runRegenerate("hard")} disabled={busy || modules.length === 0}>
                 Hard Regenerate Failed Modules
+              </Button>
+              <Button size="lg" variant="default" onClick={async () => {
+                setBusy(true);
+                setProgress({ i: 0, total: 0, file: "" });
+                setLastRegen(null);
+                try {
+                  const summary = await upgradePackageToSellReady(r!.id, (i, total, file) => setProgress({ i, total, file }));
+                  setLastRegen(summary);
+                  toast.success(`Upgrade selesai. QC score: ${summary.scoreAfter ?? "-"}`);
+                  await reload();
+                } catch (e: any) { toast.error(e.message ?? String(e)); }
+                finally { setBusy(false); setProgress(null); }
+              }} disabled={busy}>
+                Upgrade Package to Sell-Ready Draft
               </Button>
             </div>
             {progress && progress.total > 0 && (
@@ -317,7 +333,11 @@ export default function RunDetail() {
         <TabsContent value="qc" className="mt-4">
           {bundle.qc ? (
             <Card><CardContent className="p-4 text-sm space-y-2">
-              <div>Blocking errors: <b>{bundle.qc.blocking_errors}</b></div>
+              <div className="grid sm:grid-cols-3 gap-2">
+                <Stat label="QC Score" value={bundle.qc.payload.score ?? "-"} />
+                <Stat label="QC Status" value={bundle.qc.payload.status ?? "-"} />
+                <Stat label="Blocking Errors" value={bundle.qc.blocking_errors} />
+              </div>
               <div>
                 <b>Errors:</b>
                 <ul className="list-disc pl-5">{(bundle.qc.payload.errors ?? []).map((e: string, i: number) => <li key={i}>{e}</li>)}</ul>
@@ -331,6 +351,19 @@ export default function RunDetail() {
               </Collapsible>
               {bundle.qc.blocking_errors > 0 && (
                 <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="default" onClick={async () => {
+                    setBusy(true);
+                    setProgress({ i: 0, total: 0, file: "" });
+                    try {
+                      const summary = await upgradePackageToSellReady(r!.id, (i, total, file) => setProgress({ i, total, file }));
+                      setLastRegen(summary);
+                      toast.success(`Upgrade selesai. QC score: ${summary.scoreAfter ?? "-"}`);
+                      await reload();
+                    } catch (e: any) { toast.error(e.message ?? String(e)); }
+                    finally { setBusy(false); setProgress(null); }
+                  }} disabled={busy}>
+                    Upgrade Package to Sell-Ready Draft
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => runRegenerate("full")} disabled={busy}>
                     Regenerate Package Content
                   </Button>
