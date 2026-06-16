@@ -305,15 +305,34 @@ export async function buildManifest(runId: string) {
 }
 
 export async function generateAllRemainingFiles(runId: string) {
+  return generateAllRemainingFilesWithProgress(runId);
+}
+
+export async function generateAllRemainingFilesWithProgress(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void,
+  options: { force?: boolean } = {}
+) {
   const bundle = await getRunBundle(runId);
   if (!bundle.manifest || !bundle.seller) throw new Error("Manifest belum dibuat.");
   await supabase.from("runs").update({ status: "CHUNK_RUNNING" as RunStatus }).eq("id", runId);
 
   const seller = bundle.seller;
   const marketplaces = bundle.run?.marketplaces ?? [];
+  const adapter = bundle.run?.adapter ?? "CUSTOM";
 
-  const pending = bundle.modules.filter((m: any) => m.status !== "acked");
-  for (const m of pending) {
+  const targets = options.force
+    ? bundle.modules
+    : bundle.modules.filter((m: any) => m.status !== "acked");
+  const total = targets.length;
+  const startedAt = Date.now();
+  let i = 0;
+  for (const m of targets) {
+    i++;
+    onProgress?.(i, total, m.file_name);
+    if (Date.now() - startedAt > 60000) {
+      throw new Error("Generate terlalu lama. Klik Retry atau lanjutkan dari file terakhir.");
+    }
     if (isForbiddenModuleKey(m.module_key)) {
       await supabase.from("output_modules").update({ status: "failed", validation: "FAIL" }).eq("id", m.id);
       continue;
@@ -328,8 +347,11 @@ export async function generateAllRemainingFiles(runId: string) {
         promptCount: seller.prompt_count ?? 10,
         tone: seller.tone ?? "Friendly",
         confirmedDescription: seller.confirmed_product_description ?? undefined,
+        confirmed_product_description: seller.confirmed_product_description ?? undefined,
+        license: seller.license ?? undefined,
       },
       marketplaces,
+      adapter,
     });
     const newStatus = out.validation === "PASS" ? "acked" : "failed";
     await supabase
@@ -409,4 +431,25 @@ export async function approvePackage(runId: string) {
       approved_at: new Date().toISOString(),
     },
   });
+}
+export async function regeneratePackageContent(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+) {
+  await supabase
+    .from("output_modules")
+    .update({ status: "pending", validation: "unknown", content: null })
+    .eq("run_id", runId);
+  await supabase
+    .from("batch_chunks")
+    .update({ status: "pending", acked: false, validation: "unknown" })
+    .eq("run_id", runId);
+  await generateAllRemainingFilesWithProgress(runId, onProgress, { force: true });
+}
+
+export async function reopenForRegeneration(runId: string) {
+  await supabase
+    .from("runs")
+    .update({ status: "READY_FOR_SELLER_REVIEW" as RunStatus, approved_at: null })
+    .eq("id", runId);
 }

@@ -18,8 +18,11 @@ import {
   confirmAssumption,
   correctAssumption,
   generateAllRemainingFiles,
+  generateAllRemainingFilesWithProgress,
   generateArchitectureForRun,
   getRunBundle,
+  regeneratePackageContent,
+  reopenForRegeneration,
   rejectAssumption,
   retryModule,
   stopRun,
@@ -31,6 +34,7 @@ export default function RunDetail() {
   const nav = useNavigate();
   const [bundle, setBundle] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ i: number; total: number; file: string } | null>(null);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -45,6 +49,22 @@ export default function RunDetail() {
     try { await action(); if (ok) toast.success(ok); await reload(); }
     catch (e: any) { toast.error(e.message ?? String(e)); }
     finally { setBusy(false); }
+  };
+
+  const runGenerate = async (force: boolean) => {
+    setBusy(true);
+    setProgress({ i: 0, total: 0, file: "" });
+    try {
+      const fn = force ? regeneratePackageContent : (id: string, cb: any) => generateAllRemainingFilesWithProgress(id, cb);
+      await fn(r!.id, (i, total, file) => setProgress({ i, total, file }));
+      toast.success(force ? "Regenerate selesai." : "Generate selesai.");
+      await reload();
+    } catch (e: any) {
+      toast.error(e.message ?? String(e));
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
   };
 
   if (!bundle) return <AppShell><p>Memuat…</p></AppShell>;
@@ -153,9 +173,19 @@ export default function RunDetail() {
         {/* TAB 4 — PEMBUAT FILE */}
         <TabsContent value="pembuat" className="mt-4 space-y-3">
           <Card><CardContent className="p-4">
-            <Button size="lg" onClick={run(() => generateAllRemainingFiles(r.id), "Generate selesai.")} disabled={busy || modules.length === 0}>
-              Generate Semua File
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="lg" onClick={() => runGenerate(false)} disabled={busy || modules.length === 0}>
+                Generate Semua File
+              </Button>
+              <Button size="lg" variant="outline" onClick={() => runGenerate(true)} disabled={busy || modules.length === 0}>
+                Regenerate Package Content
+              </Button>
+            </div>
+            {progress && progress.total > 0 && (
+              <div className="mt-3 text-xs text-muted-foreground">
+                Generating file {progress.i} of {progress.total}: <span className="font-mono">{progress.file}</span>
+              </div>
+            )}
             <div className="mt-3 text-sm grid grid-cols-2 sm:grid-cols-5 gap-2">
               <Stat label="Total" value={modules.length} />
               <Stat label="Selesai" value={completed} />
@@ -265,13 +295,18 @@ export default function RunDetail() {
               <Collapsible><CollapsibleTrigger className="text-xs underline">View Checks</CollapsibleTrigger>
                 <CollapsibleContent><pre className="text-xs bg-muted p-3 rounded-md">{JSON.stringify(bundle.qc.payload.checks, null, 2)}</pre></CollapsibleContent>
               </Collapsible>
+              {bundle.qc.blocking_errors > 0 && (
+                <Button size="sm" variant="outline" onClick={() => runGenerate(true)} disabled={busy}>
+                  Regenerate Package Content
+                </Button>
+              )}
             </CardContent></Card>
           ) : <p className="text-sm text-muted-foreground">QC belum tersedia. Jalankan Generate Semua File dulu.</p>}
         </TabsContent>
 
         {/* TAB 8 — APPROVAL */}
         <TabsContent value="approval" className="mt-4">
-          <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} />
+          <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} onReopen={() => runGenerate(true)} />
         </TabsContent>
       </Tabs>
     </AppShell>
@@ -315,15 +350,31 @@ function AssumptionCard({ a, onChange, busy, setBusy }: any) {
   );
 }
 
-function ApprovalCard({ ready, runId, busy, reload, setBusy, status, approvedAt }: any) {
+function ApprovalCard({ ready, runId, busy, reload, setBusy, status, approvedAt, onReopen }: any) {
   const [checked, setChecked] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [token, setToken] = useState("");
 
   if (status === "PASS_FINAL") {
-    return <Card><CardContent className="p-4 text-sm">
+    const doReopen = async () => {
+      setBusy(true);
+      try {
+        await reopenForRegeneration(runId);
+        toast.success("Run dibuka kembali untuk regenerasi konten.");
+        await reload();
+        if (onReopen) await onReopen();
+      } catch (e: any) {
+        toast.error(e.message ?? String(e));
+      } finally {
+        setBusy(false);
+      }
+    };
+    return <Card><CardContent className="p-4 text-sm space-y-3">
       <Badge>Disetujui (PASS_FINAL)</Badge>
       <p className="mt-2 text-muted-foreground">Disetujui pada {approvedAt ? new Date(approvedAt).toLocaleString() : "—"}.</p>
+      <Button size="sm" variant="outline" onClick={doReopen} disabled={busy}>
+        Reopen for Content Regeneration
+      </Button>
     </CardContent></Card>;
   }
 
