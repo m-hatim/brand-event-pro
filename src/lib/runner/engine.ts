@@ -834,24 +834,42 @@ function listingGeneric(mp: string, seller: any, adapter: ResolvedAdapter): stri
 }
 
 function bundleIndex(modules: { key: string; file: string }[], marketplaces: string[]): string {
+  const buyerFiles = ["01_README.md", "02_PromptBook.md", "03_PromptIndex.csv", "04_UsageGuide.md", "05_QualityChecklist.md"];
+  const sellerFiles = ["06_ManualUploadGuide.md", ...modules.filter((m) => m.key.startsWith("MARKETPLACE_")).map((m) => m.file), "11_BundleIndex.md"];
   return [
     `# Bundle Index`,
     ``,
-    `## Daftar File & Tujuan`,
+    `## Daftar semua file`,
+    ...modules.map((m) => `- ${m.file}`),
+    ``,
+    `## Fungsi setiap file`,
     ...modules.map((m) => `- **${m.file}** — ${describeFile(m.key)}`),
     ``,
-    `## Recommended Upload Order`,
-    `1. README & UsageGuide (untuk pembeli baca dulu)`,
-    `2. PromptBook + PromptIndex.csv`,
-    `3. QualityChecklist + ManualUploadGuide`,
-    `4. Listing per marketplace (${marketplaces.join(", ") || "—"})`,
+    `## Urutan baca yang disarankan`,
+    `1. 01_README.md — pengantar`,
+    `2. 04_UsageGuide.md — cara pakai`,
+    `3. 02_PromptBook.md — koleksi prompt`,
+    `4. 03_PromptIndex.csv — index ringkas`,
+    `5. 05_QualityChecklist.md — checklist review`,
+    `6. 06_ManualUploadGuide.md — panduan upload`,
+    `7. 10_Listing_*.md — draft listing per marketplace`,
     ``,
-    `## Final Seller Review Checklist`,
+    `## File untuk buyer`,
+    ...buyerFiles.map((f) => `- ${f}`),
+    ``,
+    `## File untuk seller listing`,
+    ...sellerFiles.map((f) => `- ${f}`),
+    ``,
+    `## Reminder upload manual`,
+    `Seluruh proses upload ke ${marketplaces.join(", ") || "marketplace tujuan"} dilakukan secara manual oleh seller. Sistem ini tidak terhubung ke API marketplace manapun dan tidak melakukan publish otomatis.`,
+    ``,
+    `## Final review checklist`,
     `- [ ] Semua file terbaca tanpa error`,
-    `- [ ] Tidak ada placeholder "Konten otomatis..."`,
+    `- [ ] Tidak ada teks template kosong`,
     `- [ ] Tidak ada prompt body duplikat`,
     `- [ ] Lisensi & harga sudah benar`,
     `- [ ] Disclaimer manual upload ada di tiap listing`,
+    `- [ ] Tidak ada klaim income, sales, atau approval marketplace`,
   ].join("\n");
 }
 
