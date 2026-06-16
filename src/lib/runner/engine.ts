@@ -933,7 +933,7 @@ export function generateModuleContent(args: {
       content = usageGuide(seller, adapter);
       break;
     case "05_QualityChecklist":
-      content = qualityChecklist(seller);
+      content = qualityChecklist(seller, adapter);
       break;
     case "06_ManualUploadGuide":
       content = manualUploadGuide(args.marketplaces);
