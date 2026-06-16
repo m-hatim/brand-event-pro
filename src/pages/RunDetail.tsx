@@ -30,7 +30,150 @@ import {
   upgradePackageToSellReady,
 } from "@/lib/runner/api";
 import type { RegenerateSummary } from "@/lib/runner/api";
-import { CHUNK_STATUS_LABEL, isForbiddenModuleKey, statusLabel } from "@/lib/runner/types";
+import {
+  CHUNK_STATUS_LABEL,
+  MARKETPLACE_BUNDLE_MODULE,
+  MARKETPLACE_MODULES,
+  REQUIRED_CORE_FILES,
+  isForbiddenModuleKey,
+  statusLabel,
+} from "@/lib/runner/types";
+
+const BUYER_PACKAGE_FILES = new Set([
+  "01_Product_Brief.md",
+  "02_PromptBook.md",
+  "03_PromptLibrary.csv",
+  "04_UsageGuide.md",
+  "05_Sample_Input_Output.md",
+  "06_QualityChecklist.md",
+  "07_License_Disclaimer.md",
+  "09_Buyer_FAQ.md",
+  "13_Ready_to_Upload_Checklist.md",
+]);
+
+const ADMIN_REVIEW_FILES = new Set([
+  "12_Product_Manifest.json",
+  "99_Assumption_Register.md",
+  "QC_Scorecard.md",
+]);
+
+function sanitizeZipName(value: string) {
+  return (value || "ppf-package")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "ppf-package";
+}
+
+function getMarketplaceDefinition(marketplace: string) {
+  return Object.values(MARKETPLACE_MODULES).find((m) => m.marketplace === marketplace);
+}
+
+function moduleCategory(module: any) {
+  if (BUYER_PACKAGE_FILES.has(module.file_name)) return "Buyer File";
+  if (module.category === "marketplace" || Object.values(MARKETPLACE_MODULES).some((m) => m.file === module.file_name)) return "Marketplace Listing";
+  if (ADMIN_REVIEW_FILES.has(module.file_name)) return "QC/Admin";
+  if (module.file_name === MARKETPLACE_BUNDLE_MODULE.file) return "Seller File";
+  return "Seller File";
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = -1;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function push16(out: number[], value: number) { out.push(value & 255, (value >>> 8) & 255); }
+function push32(out: number[], value: number) { out.push(value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255); }
+function pushBytes(out: number[], bytes: Uint8Array) { for (const b of bytes) out.push(b); }
+
+function createZip(entries: Array<{ path: string; content: string }>) {
+  const enc = new TextEncoder();
+  const out: number[] = [];
+  const central: number[] = [];
+  for (const entry of entries) {
+    const name = enc.encode(entry.path.replace(/^\/+/, ""));
+    const data = enc.encode(entry.content ?? "");
+    const crc = crc32(data);
+    const offset = out.length;
+
+    push32(out, 0x04034b50);
+    push16(out, 20);
+    push16(out, 0x0800);
+    push16(out, 0);
+    push16(out, 0);
+    push16(out, 0);
+    push32(out, crc);
+    push32(out, data.length);
+    push32(out, data.length);
+    push16(out, name.length);
+    push16(out, 0);
+    pushBytes(out, name);
+    pushBytes(out, data);
+
+    push32(central, 0x02014b50);
+    push16(central, 20);
+    push16(central, 20);
+    push16(central, 0x0800);
+    push16(central, 0);
+    push16(central, 0);
+    push16(central, 0);
+    push32(central, crc);
+    push32(central, data.length);
+    push32(central, data.length);
+    push16(central, name.length);
+    push16(central, 0);
+    push16(central, 0);
+    push16(central, 0);
+    push16(central, 0);
+    push32(central, 0);
+    push32(central, offset);
+    pushBytes(central, name);
+  }
+  const centralOffset = out.length;
+  out.push(...central);
+  push32(out, 0x06054b50);
+  push16(out, 0);
+  push16(out, 0);
+  push16(out, entries.length);
+  push16(out, entries.length);
+  push32(out, central.length);
+  push32(out, centralOffset);
+  push16(out, 0);
+  return new Blob([new Uint8Array(out)], { type: "application/zip" });
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function helperUploadInstructions(marketplaces: string[]) {
+  return `# Upload Instructions\n\n1. Upload file buyer-package ZIP sebagai produk digital utama.\n2. Gunakan seller-marketplace-pack untuk copy listing, harga, thumbnail brief, dan checklist.\n3. Siapkan cover berdasarkan 11_Thumbnail_Brief.md.\n4. Marketplace terpilih: ${marketplaces.join(", ") || "-"}.\n5. Semua upload dilakukan manual. Tidak ada API dan tidak ada auto-publish.\n6. Seller wajib cek kebijakan marketplace sebelum publish.\n7. Jangan memakai klaim jaminan income, sales, konversi, atau marketplace approval.\n`;
+}
+
+function helperFileMap(modules: any[]) {
+  const rows = modules
+    .filter((m) => m.content && !isForbiddenModuleKey(m.module_key))
+    .map((m) => `| ${m.file_name} | ${moduleCategory(m)} | ${BUYER_PACKAGE_FILES.has(m.file_name) ? "Buyer package" : "Seller/admin reference"} |`)
+    .join("\n");
+  return `# File Map\n\n| File | Category | Visibility |\n|---|---|---|\n${rows}\n`;
+}
+
+function helperSellerChecklist() {
+  return `# Final Seller Checklist\n\n- [ ] Buyer ZIP bisa dibuka.\n- [ ] PromptBook sudah dicek.\n- [ ] CSV bisa dibuka di spreadsheet.\n- [ ] License dan disclaimer ikut disertakan.\n- [ ] Sample Input/Output ada.\n- [ ] Listing marketplace direview manual.\n- [ ] Harga dan thumbnail sudah siap.\n- [ ] Tidak ada klaim income/sales/approval marketplace.\n- [ ] Kebijakan marketplace sudah dicek.\n- [ ] Produk diupload manual.\n`;
+}
 
 export default function RunDetail() {
   const { id } = useParams();
@@ -98,6 +241,51 @@ export default function RunDetail() {
   const failed = modules.filter((m) => m.status === "failed").length;
   const pending = modules.length - completed - failed;
   const pct = modules.length ? Math.round((completed / modules.length) * 100) : 0;
+  const zipBaseName = sanitizeZipName(bundle.seller?.brand || bundle.seller?.niche || "ppf-package");
+  const downloadableModules = modules.filter((m) => m.content && !isForbiddenModuleKey(m.module_key));
+  const marketplaceFiles = downloadableModules.filter((m) => moduleCategory(m) === "Marketplace Listing");
+
+  const downloadModuleZip = (kind: "all" | "buyer" | "seller" | "complete") => {
+    const date = todayStamp();
+    let entries: Array<{ path: string; content: string }> = [];
+    let fileName = `${zipBaseName}-${date}.zip`;
+
+    if (kind === "buyer") {
+      entries = downloadableModules
+        .filter((m) => BUYER_PACKAGE_FILES.has(m.file_name))
+        .map((m) => ({ path: `buyer-package/${m.file_name}`, content: m.content }));
+      fileName = `buyer-package-${zipBaseName}-${date}.zip`;
+    } else if (kind === "seller") {
+      entries = downloadableModules
+        .filter((m) => !BUYER_PACKAGE_FILES.has(m.file_name))
+        .map((m) => ({ path: `seller-marketplace-pack/${m.file_name}`, content: m.content }));
+      entries.push({ path: "seller-marketplace-pack/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(r.marketplaces ?? []) });
+      entries.push({ path: "seller-marketplace-pack/FILE_MAP.md", content: helperFileMap(downloadableModules) });
+      fileName = `seller-marketplace-pack-${zipBaseName}-${date}.zip`;
+    } else if (kind === "complete") {
+      entries = [
+        ...downloadableModules
+          .filter((m) => BUYER_PACKAGE_FILES.has(m.file_name))
+          .map((m) => ({ path: `buyer-package/${m.file_name}`, content: m.content })),
+        ...downloadableModules
+          .filter((m) => !BUYER_PACKAGE_FILES.has(m.file_name))
+          .map((m) => ({ path: `seller-marketplace-pack/${m.file_name}`, content: m.content })),
+        { path: "admin-review/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(r.marketplaces ?? []) },
+        { path: "admin-review/FILE_MAP.md", content: helperFileMap(downloadableModules) },
+        { path: "admin-review/FINAL_SELLER_CHECKLIST.md", content: helperSellerChecklist() },
+      ];
+      fileName = `complete-marketplace-package-${zipBaseName}-${date}.zip`;
+    } else {
+      entries = downloadableModules.map((m) => ({ path: m.file_name, content: m.content }));
+      fileName = `download-all-${zipBaseName}-${date}.zip`;
+    }
+
+    if (!entries.length) {
+      toast.error("Belum ada file yang bisa diunduh.");
+      return;
+    }
+    downloadBlob(createZip(entries), fileName);
+  };
 
   return (
     <AppShell>
@@ -288,14 +476,33 @@ export default function RunDetail() {
 
         {/* TAB 5 — PAKET MARKETPLACE */}
         <TabsContent value="paket" className="mt-4 space-y-3">
-          <p className="text-sm text-muted-foreground"><b>Upload manual saja.</b> Semua listing harus di-upload secara manual ke marketplace masing-masing setelah review seller.</p>
+          <Card>
+            <CardContent className="p-4 text-sm space-y-2">
+              <p><b>Upload manual saja.</b> Semua listing harus di-upload secara manual ke marketplace masing-masing setelah review seller.</p>
+              <p className="text-muted-foreground">Jika listing masih kosong, buka tab <b>Pembuat File</b> lalu klik <b>Generate Semua File</b> atau <b>Upgrade Package to Sell-Ready Draft</b>.</p>
+            </CardContent>
+          </Card>
           {(r.marketplaces ?? []).map((mp: string) => {
-            const mod = modules.find((m: any) => m.module_key === `MARKETPLACE_${mp.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_LISTING`);
+            const def = getMarketplaceDefinition(mp);
+            const mod = modules.find((m: any) =>
+              (def && (m.module_key === def.key || m.file_name === def.file)) ||
+              m.marketplace === mp ||
+              (mp === "Lynk.id" && /LynkID|Lynk\.id/i.test(`${m.module_key} ${m.file_name}`)) ||
+              (mp === "Shopee" && /Shopee/i.test(`${m.module_key} ${m.file_name}`)) ||
+              (mp === "Tokopedia" && /Tokopedia/i.test(`${m.module_key} ${m.file_name}`))
+            );
             return (
               <Card key={mp}><CardHeader><CardTitle className="text-sm">{mp}</CardTitle></CardHeader>
-                <CardContent>
-                  {mod?.content ? <pre className="text-xs whitespace-pre-wrap bg-muted p-3 rounded-md">{mod.content}</pre>
-                    : <p className="text-sm text-muted-foreground">Belum di-generate.</p>}
+                <CardContent className="space-y-2">
+                  {mod?.content ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline">{mod.file_name}</Badge>
+                        <Badge variant="secondary">{mod.status}</Badge>
+                      </div>
+                      <pre className="text-xs whitespace-pre-wrap bg-muted p-3 rounded-md max-h-[520px] overflow-auto">{mod.content}</pre>
+                    </>
+                  ) : <p className="text-sm text-muted-foreground">Belum di-generate. File yang dicari: {def?.file ?? mp}</p>}
                 </CardContent>
               </Card>
             );
@@ -303,23 +510,38 @@ export default function RunDetail() {
         </TabsContent>
 
         {/* TAB 6 — FILES */}
-        <TabsContent value="files" className="mt-4 space-y-2">
+        <TabsContent value="files" className="mt-4 space-y-3">
+          <Card>
+            <CardHeader><CardTitle className="text-base">File yang Perlu Diunggah ke Marketplace</CardTitle></CardHeader>
+            <CardContent className="text-sm space-y-3">
+              <p><b>Buyer Package ZIP</b> adalah file utama yang diberikan/diupload sebagai produk digital untuk pembeli.</p>
+              <p><b>Seller Marketplace Pack ZIP</b> dipakai seller untuk copy listing, pricing, thumbnail brief, manifest, QC, dan checklist upload.</p>
+              <p><b>Complete Package ZIP</b> adalah arsip lengkap untuk review final. Semua upload tetap manual dan seller wajib cek kebijakan marketplace.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => downloadModuleZip("all")} disabled={!downloadableModules.length}><Download className="w-4 h-4 mr-1" /> Download All ZIP</Button>
+                <Button size="sm" variant="outline" onClick={() => downloadModuleZip("buyer")} disabled={!downloadableModules.length}><Download className="w-4 h-4 mr-1" /> Buyer Package ZIP</Button>
+                <Button size="sm" variant="outline" onClick={() => downloadModuleZip("seller")} disabled={!downloadableModules.length}><Download className="w-4 h-4 mr-1" /> Seller Marketplace Pack ZIP</Button>
+                <Button size="sm" onClick={() => downloadModuleZip("complete")} disabled={!downloadableModules.length}><Download className="w-4 h-4 mr-1" /> Complete Package ZIP</Button>
+              </div>
+              <div className="text-xs text-muted-foreground">Marketplace listing terdeteksi: {marketplaceFiles.length}</div>
+            </CardContent>
+          </Card>
+
           {modules.filter((m) => !isForbiddenModuleKey(m.module_key)).map((m: any) => (
             <Card key={m.id}>
-              <CardContent className="p-3 flex items-center justify-between">
+              <CardContent className="p-3 flex flex-wrap items-center gap-3 justify-between">
                 <div>
                   <div className="font-medium">{m.file_name}</div>
                   <div className="text-xs text-muted-foreground">{m.module_key} • {m.status}</div>
+                  <Badge className="mt-2" variant={moduleCategory(m) === "Buyer File" ? "default" : "secondary"}>{moduleCategory(m)}</Badge>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" disabled={!m.content} onClick={() => { navigator.clipboard.writeText(m.content || ""); toast.success("Disalin."); }}>
                     <Copy className="w-4 h-4 mr-1" /> Copy
                   </Button>
                   <Button size="sm" variant="outline" disabled={!m.content} onClick={() => {
-                    const blob = new Blob([m.content || ""], { type: "text/plain" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a"); a.href = url; a.download = m.file_name; a.click();
-                    URL.revokeObjectURL(url);
+                    const blob = new Blob([m.content || ""], { type: m.file_name.endsWith(".csv") ? "text/csv" : "text/plain" });
+                    downloadBlob(blob, m.file_name);
                   }}>
                     <Download className="w-4 h-4 mr-1" /> Download
                   </Button>
