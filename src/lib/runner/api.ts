@@ -432,3 +432,24 @@ export async function approvePackage(runId: string) {
     },
   });
 }
+export async function regeneratePackageContent(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+) {
+  await supabase
+    .from("output_modules")
+    .update({ status: "pending", validation: "unknown", content: null })
+    .eq("run_id", runId);
+  await supabase
+    .from("batch_chunks")
+    .update({ status: "pending", acked: false, validation: "unknown" })
+    .eq("run_id", runId);
+  await generateAllRemainingFilesWithProgress(runId, onProgress, { force: true });
+}
+
+export async function reopenForRegeneration(runId: string) {
+  await supabase
+    .from("runs")
+    .update({ status: "READY_FOR_SELLER_REVIEW" as RunStatus, approved_at: null })
+    .eq("id", runId);
+}
