@@ -197,7 +197,7 @@ export async function generateArchitectureForRun(runId: string) {
   const owner = await uid();
   const bundle = await getRunBundle(runId);
   if (!bundle.seller) throw new Error("Seller input belum lengkap.");
-  const payload = generateArchitecture({
+  const payload: any = generateArchitecture({
     brand: bundle.seller.brand ?? undefined,
     niche: bundle.seller.niche ?? undefined,
     audience: bundle.seller.audience ?? undefined,
@@ -210,7 +210,7 @@ export async function generateArchitectureForRun(runId: string) {
   if (bundle.architecture) {
     await supabase.from("architecture_outputs").update({ payload, approved: false }).eq("id", bundle.architecture.id);
   } else {
-    await supabase.from("architecture_outputs").insert({ owner_id: owner, run_id: runId, payload });
+    await supabase.from("architecture_outputs").insert([{ owner_id: owner, run_id: runId, payload }]);
   }
   // Seed assumptions if none
   if (bundle.assumptions.length === 0) {
