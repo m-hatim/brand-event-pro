@@ -5,7 +5,9 @@ import {
   correctDescription,
   generateArchitecture,
   generateKeyAnchors,
+  generateActualQCScorecardContent,
   generateModuleContent,
+  generateSyncedManifestContent,
   generateRunRequestId,
   runQC,
   safeMarketplaces,
@@ -358,10 +360,47 @@ async function runAndPersistQC(runId: string, bundleBefore: Bundle) {
     confirmedDescription: latest.seller.confirmed_product_description ?? "",
     marketplaces: latest.run.marketplaces ?? [],
   });
+
+  const seller = makeGenerationSeller(latest);
+  const syncedManifest = generateSyncedManifestContent({ seller, adapter: latest.run.adapter, marketplaces: latest.run.marketplaces ?? [], qc });
+  const actualScorecard = generateActualQCScorecardContent({ seller, qc });
+
+  const manifestModule = latest.modules.find((m) => m.file_name === "12_Product_Manifest.json");
+  if (manifestModule) {
+    await supabase
+      .from("output_modules")
+      .update({ content: syncedManifest, validation: "PASS", status: "acked" })
+      .eq("id", manifestModule.id);
+    await supabase
+      .from("batch_chunks")
+      .update({ status: "acked", validation: "PASS", acked: true })
+      .eq("module_id", manifestModule.id);
+  }
+
+  const scorecardModule = latest.modules.find((m) => m.file_name === "QC_Scorecard.md");
+  if (scorecardModule) {
+    await supabase
+      .from("output_modules")
+      .update({ content: actualScorecard, validation: "PASS", status: "acked" })
+      .eq("id", scorecardModule.id);
+    await supabase
+      .from("batch_chunks")
+      .update({ status: "acked", validation: "PASS", acked: true })
+      .eq("module_id", scorecardModule.id);
+  }
+
   await persistQC(runId, latest.run.owner_id, qc, latest.qc?.id);
-  const status: RunStatus = deriveReady(qc, latest) ? "READY_FOR_SELLER_REVIEW" : qc.score >= QC_THRESHOLDS.MIN_SELL_READY ? "FILES_PARTIAL" : "CHUNK_VALIDATION_FAILED";
+  const refreshed = await getRunBundle(runId);
+  const status: RunStatus = deriveReady(qc, refreshed) ? "READY_FOR_SELLER_REVIEW" : qc.score >= QC_THRESHOLDS.MIN_SELL_READY ? "FILES_PARTIAL" : "CHUNK_VALIDATION_FAILED";
   await supabase.from("runs").update({ status }).eq("id", runId);
-  return { qc, status, latest, previous: bundleBefore };
+  return { qc, status, latest: refreshed, previous: bundleBefore };
+}
+
+export async function ensureQcArtifactsSynced(runId: string) {
+  const before = await getRunBundle(runId);
+  if (!before.manifest || !before.seller || !before.run) throw new Error("Manifest/seller/run belum siap untuk sync QC.");
+  await runAndPersistQC(runId, before);
+  return getRunBundle(runId);
 }
 
 export async function generateAllRemainingFiles(runId: string) {
