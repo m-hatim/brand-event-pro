@@ -20,6 +20,7 @@ import {
   generateAllRemainingFiles,
   generateAllRemainingFilesWithProgress,
   generateArchitectureForRun,
+  ensureQcArtifactsSynced,
   getRunBundle,
   hardRegenerateFailedModules,
   regeneratePackageContent,
@@ -249,32 +250,26 @@ export default function RunDetail() {
     const date = todayStamp();
     let activeBundle = bundle;
 
-    const needsQcArtifactSync = (candidate: any) => {
-      const payload = (candidate?.qc?.payload ?? {}) as any;
-      const modulesForCheck = (candidate?.modules ?? []) as any[];
-      const scoreIsMissing = typeof payload.score !== "number";
+    setBusy(true);
+    setProgress({ i: 0, total: 0, file: "Final QC/manifest sync before ZIP export" });
+    try {
+      activeBundle = await ensureQcArtifactsSynced(r.id);
+      setBundle(activeBundle);
+      const modulesForCheck = (activeBundle?.modules ?? []) as any[];
+      const qcPayloadAfter = (activeBundle?.qc?.payload ?? {}) as any;
       const pendingScorecard = modulesForCheck.some((m) => m.file_name === "QC_Scorecard.md" && String(m.content ?? "").includes("PENDING/100"));
       const staleManifest = modulesForCheck.some((m) => m.file_name === "12_Product_Manifest.json" && String(m.content ?? "").includes('"qc_score": null'));
-      return scoreIsMissing || pendingScorecard || staleManifest;
-    };
-
-    if (needsQcArtifactSync(activeBundle)) {
-      setBusy(true);
-      setProgress({ i: 0, total: 0, file: "Sync QC artifacts before ZIP export" });
-      try {
-        await generateAllRemainingFilesWithProgress(r.id, (i, total, file) => setProgress({ i, total, file }));
-        activeBundle = await getRunBundle(r.id);
-        setBundle(activeBundle);
-        toast.success("QC dan manifest disinkronkan sebelum export ZIP.");
-      } catch (e: any) {
-        toast.error(e.message ?? String(e));
-        setBusy(false);
-        setProgress(null);
+      if (typeof qcPayloadAfter.score !== "number" || pendingScorecard || staleManifest) {
+        toast.error("QC/manifest masih belum sinkron. Generate ulang semua file sebelum export.");
         return;
-      } finally {
-        setBusy(false);
-        setProgress(null);
       }
+      toast.success("QC dan manifest final sudah sinkron sebelum export ZIP.");
+    } catch (e: any) {
+      toast.error(e.message ?? String(e));
+      return;
+    } finally {
+      setBusy(false);
+      setProgress(null);
     }
 
     const activeRun = activeBundle.run ?? r;
