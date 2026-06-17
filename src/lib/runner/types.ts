@@ -35,6 +35,7 @@ export const ADAPTERS = [
   { id: "BUSINESS_MARKETING", label: "Prompt Bisnis & Marketing" },
   { id: "CODING_AUTOMATION", label: "Prompt Coding & Automasi" },
   { id: "EVIDENCE_HANDBOOK", label: "Evidence-Based Handbook / Vault" },
+  { id: "READY_TO_SELL_PRODUCT", label: "Produk Siap Jual / Productized Pack" },
   { id: "CUSTOM", label: "Custom / Lainnya" },
 ] as const;
 export type AdapterId = (typeof ADAPTERS)[number]["id"];
@@ -87,6 +88,10 @@ export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
   { key: "09_Buyer_FAQ", file: "09_Buyer_FAQ.md", chunks: 1, category: "core" },
   { key: "10_Pricing_Recommendation", file: "10_Pricing_Recommendation.md", chunks: 1, category: "core" },
   { key: "11_Thumbnail_Brief", file: "11_Thumbnail_Brief.md", chunks: 1, category: "core" },
+  { key: "14_Cover_Generation_Brief", file: "14_Cover_Generation_Brief.md", chunks: 1, category: "core" },
+  { key: "15_Marketing_Video_CTA_Prompt", file: "15_Marketing_Video_CTA_Prompt.md", chunks: 1, category: "core" },
+  { key: "20_Complete_PDF_Product_Draft", file: "20_Complete_PDF_Product_Draft.md", chunks: 1, category: "core" },
+  { key: "21_Marketplace_Upload_Asset_Kit", file: "21_Marketplace_Upload_Asset_Kit.md", chunks: 1, category: "core" },
   { key: "12_Product_Manifest", file: "12_Product_Manifest.json", chunks: 1, category: "core" },
   { key: "13_Ready_to_Upload_Checklist", file: "13_Ready_to_Upload_Checklist.md", chunks: 1, category: "core" },
   { key: "99_Assumption_Register", file: "99_Assumption_Register.md", chunks: 1, category: "core" },
