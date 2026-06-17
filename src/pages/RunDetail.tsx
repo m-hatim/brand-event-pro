@@ -245,39 +245,72 @@ export default function RunDetail() {
   const downloadableModules = modules.filter((m) => m.content && !isForbiddenModuleKey(m.module_key));
   const marketplaceFiles = downloadableModules.filter((m) => moduleCategory(m) === "Marketplace Listing");
 
-  const downloadModuleZip = (kind: "all" | "buyer" | "seller" | "complete") => {
+  const downloadModuleZip = async (kind: "all" | "buyer" | "seller" | "complete") => {
     const date = todayStamp();
+    let activeBundle = bundle;
+
+    const needsQcArtifactSync = (candidate: any) => {
+      const payload = (candidate?.qc?.payload ?? {}) as any;
+      const modulesForCheck = (candidate?.modules ?? []) as any[];
+      const scoreIsMissing = typeof payload.score !== "number";
+      const pendingScorecard = modulesForCheck.some((m) => m.file_name === "QC_Scorecard.md" && String(m.content ?? "").includes("PENDING/100"));
+      const staleManifest = modulesForCheck.some((m) => m.file_name === "12_Product_Manifest.json" && String(m.content ?? "").includes('"qc_score": null'));
+      return scoreIsMissing || pendingScorecard || staleManifest;
+    };
+
+    if (needsQcArtifactSync(activeBundle)) {
+      setBusy(true);
+      setProgress({ i: 0, total: 0, file: "Sync QC artifacts before ZIP export" });
+      try {
+        await generateAllRemainingFilesWithProgress(r.id, (i, total, file) => setProgress({ i, total, file }));
+        activeBundle = await getRunBundle(r.id);
+        setBundle(activeBundle);
+        toast.success("QC dan manifest disinkronkan sebelum export ZIP.");
+      } catch (e: any) {
+        toast.error(e.message ?? String(e));
+        setBusy(false);
+        setProgress(null);
+        return;
+      } finally {
+        setBusy(false);
+        setProgress(null);
+      }
+    }
+
+    const activeRun = activeBundle.run ?? r;
+    const activeModules = (activeBundle.modules as any[]).filter((m) => m.content && !isForbiddenModuleKey(m.module_key));
+    const activeZipBaseName = sanitizeZipName(activeBundle.seller?.brand || activeBundle.seller?.niche || "ppf-package");
     let entries: Array<{ path: string; content: string }> = [];
-    let fileName = `${zipBaseName}-${date}.zip`;
+    let fileName = `${activeZipBaseName}-${date}.zip`;
 
     if (kind === "buyer") {
-      entries = downloadableModules
+      entries = activeModules
         .filter((m) => BUYER_PACKAGE_FILES.has(m.file_name))
         .map((m) => ({ path: `buyer-package/${m.file_name}`, content: m.content }));
-      fileName = `buyer-package-${zipBaseName}-${date}.zip`;
+      fileName = `buyer-package-${activeZipBaseName}-${date}.zip`;
     } else if (kind === "seller") {
-      entries = downloadableModules
+      entries = activeModules
         .filter((m) => !BUYER_PACKAGE_FILES.has(m.file_name))
         .map((m) => ({ path: `seller-marketplace-pack/${m.file_name}`, content: m.content }));
-      entries.push({ path: "seller-marketplace-pack/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(r.marketplaces ?? []) });
-      entries.push({ path: "seller-marketplace-pack/FILE_MAP.md", content: helperFileMap(downloadableModules) });
-      fileName = `seller-marketplace-pack-${zipBaseName}-${date}.zip`;
+      entries.push({ path: "seller-marketplace-pack/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(activeRun.marketplaces ?? []) });
+      entries.push({ path: "seller-marketplace-pack/FILE_MAP.md", content: helperFileMap(activeModules) });
+      fileName = `seller-marketplace-pack-${activeZipBaseName}-${date}.zip`;
     } else if (kind === "complete") {
       entries = [
-        ...downloadableModules
+        ...activeModules
           .filter((m) => BUYER_PACKAGE_FILES.has(m.file_name))
           .map((m) => ({ path: `buyer-package/${m.file_name}`, content: m.content })),
-        ...downloadableModules
+        ...activeModules
           .filter((m) => !BUYER_PACKAGE_FILES.has(m.file_name))
           .map((m) => ({ path: `seller-marketplace-pack/${m.file_name}`, content: m.content })),
-        { path: "admin-review/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(r.marketplaces ?? []) },
-        { path: "admin-review/FILE_MAP.md", content: helperFileMap(downloadableModules) },
+        { path: "admin-review/UPLOAD_INSTRUCTIONS.md", content: helperUploadInstructions(activeRun.marketplaces ?? []) },
+        { path: "admin-review/FILE_MAP.md", content: helperFileMap(activeModules) },
         { path: "admin-review/FINAL_SELLER_CHECKLIST.md", content: helperSellerChecklist() },
       ];
-      fileName = `complete-marketplace-package-${zipBaseName}-${date}.zip`;
+      fileName = `complete-marketplace-package-${activeZipBaseName}-${date}.zip`;
     } else {
-      entries = downloadableModules.map((m) => ({ path: m.file_name, content: m.content }));
-      fileName = `download-all-${zipBaseName}-${date}.zip`;
+      entries = activeModules.map((m) => ({ path: m.file_name, content: m.content }));
+      fileName = `download-all-${activeZipBaseName}-${date}.zip`;
     }
 
     if (!entries.length) {
