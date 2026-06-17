@@ -34,6 +34,7 @@ export const ADAPTERS = [
   { id: "CONTENT_CREATION", label: "Prompt Konten" },
   { id: "BUSINESS_MARKETING", label: "Prompt Bisnis & Marketing" },
   { id: "CODING_AUTOMATION", label: "Prompt Coding & Automasi" },
+  { id: "EVIDENCE_HANDBOOK", label: "Evidence-Based Handbook / Vault" },
   { id: "CUSTOM", label: "Custom / Lainnya" },
 ] as const;
 export type AdapterId = (typeof ADAPTERS)[number]["id"];
