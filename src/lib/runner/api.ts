@@ -1,287 +1,629 @@
-// Shared pure types/constants. No browser APIs. No server secrets. Safe everywhere.
+// Client-side wrappers around Supabase. RLS scopes every row to the logged-in user.
+import { supabase } from "@/integrations/supabase/client";
+import {
+  buildManifestPayload,
+  correctDescription,
+  generateArchitecture,
+  generateKeyAnchors,
+  generateActualQCScorecardContent,
+  generateModuleContent,
+  generateSyncedManifestContent,
+  generateRunRequestId,
+  runQC,
+  safeMarketplaces,
+  seedAssumptions,
+} from "./engine";
+import {
+  QC_THRESHOLDS,
+  REQUIRED_CORE_MODULES,
+  RunStatus,
+  isForbiddenModuleKey,
+} from "./types";
 
-export const STATUSES = [
-  "DRAFT_INPUT",
-  "BLOCKED_INPUT_MISSING",
-  "ARCHITECTURE_PENDING",
-  "ARCHITECTURE_READY",
-  "ASSUMPTIONS_PENDING",
-  "BLOCKED_CRITICAL_ASSUMPTION",
-  "MANIFEST_PENDING",
-  "MANIFEST_READY",
-  "CHUNK_RUNNING",
-  "CHUNK_VALIDATION_FAILED",
-  "BLOCKED_CONDENSED_OUTPUT",
-  "BLOCKED_GENERIC_OUTPUT",
-  "BLOCKED_MARKETPLACE_BUNDLE_VALIDATION_FAILED",
-  "CHECKSUM_PENDING",
-  "QC_PENDING",
-  "FILES_PARTIAL",
-  "UPGRADE_IN_PROGRESS",
-  "READY_FOR_SELLER_REVIEW",
-  "APPROVAL_PENDING",
-  "PASS_FINAL",
-  "STOPPED",
-] as const;
-export type RunStatus = (typeof STATUSES)[number];
+type Bundle = Awaited<ReturnType<typeof getRunBundle>>;
+type OutputModule = Bundle["modules"][number];
 
-export const ADAPTERS = [
-  { id: "TEXT_TO_IMAGE", label: "Prompt Gambar AI" },
-  { id: "IMAGE_EDITING", label: "Prompt Edit Gambar" },
-  { id: "TEXT_TO_VIDEO", label: "Prompt Video AI" },
-  { id: "ACADEMIC_WRITING", label: "Prompt Penulisan Akademik" },
-  { id: "RESEARCH", label: "Prompt Riset" },
-  { id: "CONTENT_CREATION", label: "Prompt Konten" },
-  { id: "BUSINESS_MARKETING", label: "Prompt Bisnis & Marketing" },
-  { id: "CODING_AUTOMATION", label: "Prompt Coding & Automasi" },
-  { id: "EVIDENCE_HANDBOOK", label: "Evidence-Based Handbook / Vault" },
-  { id: "READY_TO_SELL_PRODUCT", label: "Produk Siap Jual / Productized Pack" },
-  { id: "CUSTOM", label: "Custom / Lainnya" },
-] as const;
-export type AdapterId = (typeof ADAPTERS)[number]["id"];
-
-export const MARKETPLACES = [
-  "Shopee",
-  "Tokopedia",
-  "Lynk.id",
-  "Gumroad",
-  "Etsy",
-  "Payhip",
-  "Lemon Squeezy",
-] as const;
-export type Marketplace = (typeof MARKETPLACES)[number];
-
-export const TONES = [
-  "Friendly",
-  "Professional",
-  "Premium",
-  "Simple",
-  "Persuasive",
-  "Gen Z Casual",
-  "Custom",
-] as const;
-
-export const LANGUAGES = ["Indonesia", "English", "Bilingual"] as const;
-export const TARGET_MARKETS = ["Indonesia", "Global", "Indonesia + Global"] as const;
-export const PROMPT_COUNTS = [10, 15, 20, 30] as const;
-export const LICENSES = ["Personal Use Only", "Personal & Commercial", "Extended License"] as const;
-
-export type ModuleCategory = "core" | "marketplace" | "bundle" | "qc";
-
-export interface ModuleDefinition {
-  key: string;
-  file: string;
-  chunks: number;
-  category: ModuleCategory;
-  marketplace?: Marketplace;
+actionGuardNoop();
+function actionGuardNoop() {
+  // Keeps this module tree-shake safe. No runtime side-effect.
 }
 
-export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
-  { key: "01_Product_Brief", file: "01_Product_Brief.md", chunks: 1, category: "core" },
-  { key: "02_PromptBook", file: "02_PromptBook.md", chunks: 1, category: "core" },
-  { key: "03_PromptLibrary", file: "03_PromptLibrary.csv", chunks: 1, category: "core" },
-  { key: "04_UsageGuide", file: "04_UsageGuide.md", chunks: 1, category: "core" },
-  { key: "05_Sample_Input_Output", file: "05_Sample_Input_Output.md", chunks: 1, category: "core" },
-  { key: "06_QualityChecklist", file: "06_QualityChecklist.md", chunks: 1, category: "core" },
-  { key: "07_License_Disclaimer", file: "07_License_Disclaimer.md", chunks: 1, category: "core" },
-  { key: "08_ManualUploadGuide", file: "08_ManualUploadGuide.md", chunks: 1, category: "core" },
-  { key: "09_Buyer_FAQ", file: "09_Buyer_FAQ.md", chunks: 1, category: "core" },
-  { key: "10_Pricing_Recommendation", file: "10_Pricing_Recommendation.md", chunks: 1, category: "core" },
-  { key: "11_Thumbnail_Brief", file: "11_Thumbnail_Brief.md", chunks: 1, category: "core" },
-  { key: "14_Cover_Generation_Brief", file: "14_Cover_Generation_Brief.md", chunks: 1, category: "core" },
-  { key: "15_Marketing_Video_CTA_Prompt", file: "15_Marketing_Video_CTA_Prompt.md", chunks: 1, category: "core" },
-  { key: "20_Complete_PDF_Product_Draft", file: "20_Complete_PDF_Product_Draft.md", chunks: 1, category: "core" },
-  { key: "21_Marketplace_Upload_Asset_Kit", file: "21_Marketplace_Upload_Asset_Kit.md", chunks: 1, category: "core" },
-  { key: "12_Product_Manifest", file: "12_Product_Manifest.json", chunks: 1, category: "core" },
-  { key: "13_Ready_to_Upload_Checklist", file: "13_Ready_to_Upload_Checklist.md", chunks: 1, category: "core" },
-  { key: "99_Assumption_Register", file: "99_Assumption_Register.md", chunks: 1, category: "core" },
-  { key: "QC_Scorecard", file: "QC_Scorecard.md", chunks: 1, category: "qc" },
-] as const as ModuleDefinition[];
-
-export const REQUIRED_CORE_FILES = REQUIRED_CORE_MODULES.map((m) => m.file);
-export const REQUIRED_CORE_KEYS = REQUIRED_CORE_MODULES.map((m) => m.key);
-
-export const MARKETPLACE_MODULES: Record<Marketplace, ModuleDefinition> = {
-  Shopee: { key: "16_Shopee_Product_Listing_ID", file: "16_Shopee_Product_Listing_ID.md", chunks: 1, category: "marketplace", marketplace: "Shopee" },
-  Tokopedia: { key: "17_Tokopedia_Product_Listing_ID", file: "17_Tokopedia_Product_Listing_ID.md", chunks: 1, category: "marketplace", marketplace: "Tokopedia" },
-  "Lynk.id": { key: "18_LynkID_Sales_Page_ID", file: "18_LynkID_Sales_Page_ID.md", chunks: 1, category: "marketplace", marketplace: "Lynk.id" },
-  Gumroad: { key: "06_Gumroad_Listing", file: "06_Gumroad_Listing.md", chunks: 1, category: "marketplace", marketplace: "Gumroad" },
-  Etsy: { key: "07_Etsy_Listing", file: "07_Etsy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Etsy" },
-  Payhip: { key: "08_Payhip_Listing", file: "08_Payhip_Listing.md", chunks: 1, category: "marketplace", marketplace: "Payhip" },
-  "Lemon Squeezy": { key: "09_LemonSqueezy_Listing", file: "09_LemonSqueezy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Lemon Squeezy" },
-};
-
-export const MARKETPLACE_BUNDLE_MODULE: ModuleDefinition = {
-  key: "19_Marketplace_Bundle_Index",
-  file: "19_Marketplace_Bundle_Index.md",
-  chunks: 1,
-  category: "bundle",
-};
-
-export const QC_THRESHOLDS = {
-  MIN_SELL_READY: 85,
-  PREMIUM_MIN: 95,
-} as const;
-
-export type QCSellReadyStatus = "NOT_SELL_READY" | "SELL_READY_STARTER_BETA" | "SELL_READY_PREMIUM_DRAFT";
-
-export const QC_CHECK_IDS = {
-  ALL_CORE_FILES_EXIST: "all_core_files_exist",
-  SELECTED_MARKETPLACE_FILES_EXIST: "selected_marketplace_files_exist",
-  NO_UNSELECTED_MARKETPLACE_FILES: "no_unselected_marketplace_files",
-  NO_API_MODULES: "no_api_modules",
-  NO_PLACEHOLDER_TEXT: "no_placeholder_text",
-  NO_FORBIDDEN_CLAIMS: "no_forbidden_claims",
-  PROMPT_COUNT_MATCHES: "prompt_count_matches",
-  CSV_ROW_COUNT_MATCHES: "csv_row_count_matches",
-  UNIQUE_PROMPT_BODIES: "unique_prompt_bodies",
-  SAMPLE_IO_EXISTS: "sample_io_exists",
-  LICENSE_EXISTS: "license_exists",
-  PRICING_MARKED_HEURISTIC: "pricing_marked_heuristic",
-  MARKETPLACE_FAQ_AND_DELIVERY: "marketplace_faq_and_delivery",
-  MANIFEST_JSON_VALID: "manifest_json_valid",
-  ASSUMPTION_REGISTER_EXISTS: "assumption_register_exists",
-  QC_SCORECARD_EXISTS: "qc_scorecard_exists",
-  MANUAL_UPLOAD_DISCLAIMER: "manual_upload_disclaimer",
-  ANCHOR_REFLECTION: "anchor_reflection",
-} as const;
-export type QCCheckId = (typeof QC_CHECK_IDS)[keyof typeof QC_CHECK_IDS];
-
-export interface QCCheckItem {
-  id: QCCheckId | string;
-  name: string;
-  status: "PASS" | "FAIL" | "WARNING";
-  weight: number;
-  message?: string;
-  details?: Record<string, unknown>;
+async function uid() {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) throw new Error("Tidak terautentikasi.");
+  return data.user.id;
 }
 
-export interface QCResult {
-  score: number;
-  status: QCSellReadyStatus;
-  blocking_errors: number;
-  errors: string[];
-  warnings: string[];
-  checks: QCCheckItem[];
-  approval_enabled: boolean;
-  generated_at: string;
+export async function getSettings() {
+  const owner = await uid();
+  const { data, error } = await supabase
+    .from("user_settings")
+    .select("*")
+    .eq("user_id", owner)
+    .maybeSingle();
+  if (error) throw error;
+  if (data) return data;
+  const ins = await supabase.from("user_settings").insert({ user_id: owner }).select("*").single();
+  if (ins.error) throw ins.error;
+  return ins.data;
 }
 
-export interface ProductManifestPayload {
-  mode: "MANUAL_UPLOAD_ONLY";
-  api_disabled: true;
-  no_api_modules: true;
-  product_id: string;
-  name: string;
-  version: string;
-  release_date: string;
+export async function updateSettings(updates: Record<string, unknown>) {
+  const owner = await uid();
+  const { data, error } = await supabase
+    .from("user_settings")
+    .update(updates)
+    .eq("user_id", owner)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function listRuns() {
+  const { data, error } = await supabase
+    .from("runs")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export interface NewRunInput {
   adapter: string;
+  brand: string;
   language: string;
+  target_market: string;
   niche: string;
-  license: string;
-  marketplaces: string[];
+  audience: string;
+  description: string;
   prompt_count: number;
-  files: {
-    core: string[];
-    marketplace: string[];
+  tone: string;
+  key_anchors: string[];
+  license: string;
+  target_price?: string;
+  marketplaces: string[];
+  original_description: string;
+  corrected_description: string;
+  confirmed_product_description: string;
+}
+
+export async function createRun(input: NewRunInput) {
+  const owner = await uid();
+  const marketplaces = safeMarketplaces(input.marketplaces);
+  let anchors = input.key_anchors;
+  if (!anchors || anchors.length < 3) {
+    anchors = generateKeyAnchors({
+      niche: input.niche,
+      audience: input.audience,
+      confirmedDescription: input.confirmed_product_description,
+      marketplaces,
+      tone: input.tone,
+      adapter: input.adapter,
+    });
+  }
+  const { data: run, error } = await supabase
+    .from("runs")
+    .insert({
+      owner_id: owner,
+      run_request_id: generateRunRequestId(),
+      adapter: input.adapter,
+      generation_mode: "MANUAL_UPLOAD_ONLY",
+      marketplaces,
+      status: "ARCHITECTURE_PENDING" as RunStatus,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  await supabase.from("seller_inputs").insert({
+    owner_id: owner,
+    run_id: run.id,
+    brand: input.brand,
+    language: input.language,
+    target_market: input.target_market,
+    niche: input.niche,
+    audience: input.audience,
+    description: input.description,
+    prompt_count: input.prompt_count,
+    tone: input.tone,
+    key_anchors: anchors,
+    license: input.license,
+    target_price: input.target_price,
+    original_description: input.original_description,
+    corrected_description: input.corrected_description,
+    confirmed_product_description: input.confirmed_product_description,
+  });
+
+  if (marketplaces.length) {
+    await supabase.from("marketplace_selections").insert(
+      marketplaces.map((m) => ({ owner_id: owner, run_id: run.id, marketplace: m }))
+    );
+  }
+
+  await supabase.from("redacted_logs").insert({
+    owner_id: owner,
+    run_id: run.id,
+    level: "info",
+    message: `Run dibuat (adapter=${input.adapter}, marketplaces=${marketplaces.join(",") || "-"}).`,
+  });
+
+  return run;
+}
+
+export async function stopRun(runId: string) {
+  const { error } = await supabase.from("runs").update({ status: "STOPPED" as RunStatus }).eq("id", runId);
+  if (error) throw error;
+}
+
+export async function getRunBundle(runId: string) {
+  const [run, seller, mp, arch, assumptions, manifest, modules, chunks, mpBundle, qc, exp, logs] = await Promise.all([
+    supabase.from("runs").select("*").eq("id", runId).maybeSingle(),
+    supabase.from("seller_inputs").select("*").eq("run_id", runId).maybeSingle(),
+    supabase.from("marketplace_selections").select("*").eq("run_id", runId),
+    supabase.from("architecture_outputs").select("*").eq("run_id", runId).maybeSingle(),
+    supabase.from("assumptions").select("*").eq("run_id", runId).order("created_at"),
+    supabase.from("manifests").select("*").eq("run_id", runId).maybeSingle(),
+    supabase.from("output_modules").select("*").eq("run_id", runId).order("created_at"),
+    supabase.from("batch_chunks").select("*").eq("run_id", runId).order("chunk_index"),
+    supabase.from("marketplace_bundle_results").select("*").eq("run_id", runId),
+    supabase.from("qc_results").select("*").eq("run_id", runId).maybeSingle(),
+    supabase.from("exports").select("*").eq("run_id", runId).maybeSingle(),
+    supabase.from("redacted_logs").select("*").eq("run_id", runId).order("created_at", { ascending: false }).limit(50),
+  ]);
+  return {
+    run: run.data,
+    seller: seller.data,
+    marketplaces: mp.data ?? [],
+    architecture: arch.data,
+    assumptions: assumptions.data ?? [],
+    manifest: manifest.data,
+    modules: modules.data ?? [],
+    chunks: chunks.data ?? [],
+    marketplaceBundle: mpBundle.data ?? [],
+    qc: qc.data,
+    export: exp.data,
+    logs: logs.data ?? [],
   };
-  expected_modules: ModuleDefinition[];
-  expected_chunks: number;
-  qc_status: QCSellReadyStatus;
-  manual_upload_only: boolean;
-  api_mode_enabled: boolean;
 }
 
-// Forbidden modules — must never appear in any manifest/chunk/file/qc/marketplace bundle
-// when generation_mode = MANUAL_UPLOAD_ONLY (the only supported mode right now).
-export const FORBIDDEN_API_MODULES = [
-  "API_SHOPEE",
-  "API_TOKOPEDIA",
-  "API_LYNK_ID",
-  "API_GUMROAD",
-  "API_ETSY",
-  "API_PAYHIP",
-  "API_LEMON_SQUEEZY",
-] as const;
-
-export function isForbiddenModuleKey(key: string): boolean {
-  return /^API_/i.test(key) || FORBIDDEN_API_MODULES.some((m) => m.toLowerCase() === key.toLowerCase());
+export async function generateDescriptionCorrection(runIdOrNull: string | null, description: string) {
+  const owner = await uid();
+  const corrected = correctDescription(description);
+  await supabase.from("description_corrections").insert({
+    owner_id: owner,
+    run_id: runIdOrNull,
+    original: description,
+    corrected,
+  });
+  return corrected;
 }
 
-export function statusLabel(s: string): string {
-  const map: Record<string, string> = {
-    DRAFT_INPUT: "Draft input",
-    BLOCKED_INPUT_MISSING: "Input belum lengkap",
-    ARCHITECTURE_PENDING: "Arsitektur menunggu",
-    ARCHITECTURE_READY: "Arsitektur siap",
-    ASSUMPTIONS_PENDING: "Asumsi menunggu",
-    BLOCKED_CRITICAL_ASSUMPTION: "Asumsi kritis belum dikonfirmasi",
-    MANIFEST_PENDING: "Manifest menunggu",
-    MANIFEST_READY: "Manifest siap",
-    CHUNK_RUNNING: "Sedang generate file",
-    CHUNK_VALIDATION_FAILED: "Validasi gagal",
-    BLOCKED_CONDENSED_OUTPUT: "Output terlalu ringkas",
-    BLOCKED_GENERIC_OUTPUT: "Output terlalu umum",
-    BLOCKED_MARKETPLACE_BUNDLE_VALIDATION_FAILED: "Validasi bundle gagal",
-    CHECKSUM_PENDING: "Checksum menunggu",
-    QC_PENDING: "QC sedang berjalan",
-    FILES_PARTIAL: "File belum lengkap",
-    UPGRADE_IN_PROGRESS: "Upgrade package berjalan",
-    READY_FOR_SELLER_REVIEW: "Siap untuk review seller",
-    APPROVAL_PENDING: "Menunggu persetujuan",
-    PASS_FINAL: "Disetujui (PASS_FINAL)",
-    STOPPED: "Dihentikan",
+export async function generateArchitectureForRun(runId: string) {
+  const owner = await uid();
+  const bundle = await getRunBundle(runId);
+  if (!bundle.seller) throw new Error("Seller input belum lengkap.");
+  const payload = generateArchitecture({
+    brand: bundle.seller.brand ?? undefined,
+    niche: bundle.seller.niche ?? undefined,
+    audience: bundle.seller.audience ?? undefined,
+    confirmedDescription: bundle.seller.confirmed_product_description ?? undefined,
+    marketplaces: bundle.run?.marketplaces ?? [],
+    adapter: bundle.run?.adapter ?? "CUSTOM",
+    promptCount: bundle.seller.prompt_count ?? 10,
+    tone: bundle.seller.tone ?? "Friendly",
+  });
+  if (bundle.architecture) {
+    await supabase.from("architecture_outputs").update({ payload, approved: false }).eq("id", bundle.architecture.id);
+  } else {
+    await supabase.from("architecture_outputs").insert([{ owner_id: owner, run_id: runId, payload }]);
+  }
+  if (bundle.assumptions.length === 0) {
+    const seeds = seedAssumptions(bundle.run?.adapter ?? "CUSTOM");
+    await supabase.from("assumptions").insert(seeds.map((a) => ({ ...a, owner_id: owner, run_id: runId })));
+  }
+  await supabase.from("runs").update({ status: "ARCHITECTURE_READY" as RunStatus }).eq("id", runId);
+}
+
+export async function approveArchitecture(runId: string) {
+  const bundle = await getRunBundle(runId);
+  if (!bundle.architecture) throw new Error("Arsitektur belum digenerate.");
+  const blocking = bundle.assumptions.filter((a) => a.type === "critical" && a.status === "pending");
+  if (blocking.length) {
+    await supabase.from("runs").update({ status: "BLOCKED_CRITICAL_ASSUMPTION" as RunStatus }).eq("id", runId);
+    throw new Error("Asumsi kritis masih pending. Konfirmasi/koreksi dulu di tab Asumsi.");
+  }
+  await supabase.from("architecture_outputs").update({ approved: true }).eq("id", bundle.architecture.id);
+  await supabase.from("runs").update({ status: "ASSUMPTIONS_PENDING" as RunStatus }).eq("id", runId);
+}
+
+export async function confirmAssumption(assumptionId: string) {
+  await supabase.from("assumptions").update({ status: "confirmed" }).eq("id", assumptionId);
+}
+export async function correctAssumption(assumptionId: string, correction: string) {
+  await supabase.from("assumptions").update({ status: "corrected", correction }).eq("id", assumptionId);
+}
+export async function rejectAssumption(assumptionId: string) {
+  await supabase.from("assumptions").update({ status: "rejected" }).eq("id", assumptionId);
+}
+
+function expectedFiles(payload: any): string[] {
+  return (payload?.expected_modules ?? []).map((m: { file: string }) => m.file);
+}
+
+function expectedKeys(payload: any): string[] {
+  return (payload?.expected_modules ?? []).map((m: { key: string }) => m.key);
+}
+
+export async function buildManifest(runId: string) {
+  const owner = await uid();
+  const bundle = await getRunBundle(runId);
+  if (!bundle.seller || !bundle.run) throw new Error("Run belum siap.");
+  const blocking = bundle.assumptions.filter((a) => a.type === "critical" && a.status === "pending");
+  if (blocking.length) {
+    await supabase.from("runs").update({ status: "BLOCKED_CRITICAL_ASSUMPTION" as RunStatus }).eq("id", runId);
+    throw new Error("Tidak bisa build manifest: asumsi kritis belum dikonfirmasi.");
+  }
+
+  await supabase.from("runs").update({ status: "MANIFEST_PENDING" as RunStatus }).eq("id", runId);
+
+  const payload = buildManifestPayload({
+    runId: bundle.run.run_request_id,
+    brand: bundle.seller.brand ?? "Prompt Product",
+    language: bundle.seller.language ?? "Indonesia",
+    targetMarket: bundle.seller.target_market ?? "Indonesia",
+    niche: bundle.seller.niche ?? "",
+    adapter: bundle.run.adapter,
+    marketplaces: bundle.run.marketplaces ?? [],
+    promptCount: bundle.seller.prompt_count ?? 10,
+    license: bundle.seller.license ?? "Personal & Commercial",
+  });
+
+  await supabase.from("batch_chunks").delete().eq("run_id", runId);
+  await supabase.from("output_modules").delete().eq("run_id", runId);
+
+  if (bundle.manifest) await supabase.from("manifests").update({ payload }).eq("id", bundle.manifest.id);
+  else await supabase.from("manifests").insert({ owner_id: owner, run_id: runId, payload });
+
+  const moduleRows = payload.expected_modules
+    .filter((m) => !isForbiddenModuleKey(m.key) && !isForbiddenModuleKey(m.file))
+    .map((m) => ({
+      owner_id: owner,
+      run_id: runId,
+      module_key: m.key,
+      file_name: m.file,
+      status: "pending",
+      validation: "unknown",
+    }));
+  const inserted = await supabase.from("output_modules").insert(moduleRows).select("*");
+  if (inserted.error) throw inserted.error;
+
+  let idx = 0;
+  const chunkRows = (inserted.data ?? []).map((m) => ({
+    owner_id: owner,
+    run_id: runId,
+    module_id: m.id,
+    chunk_index: idx++,
+    status: "pending",
+    validation: "unknown",
+    acked: false,
+  }));
+  if (chunkRows.length) await supabase.from("batch_chunks").insert(chunkRows);
+
+  await supabase.from("runs").update({ status: "MANIFEST_READY" as RunStatus }).eq("id", runId);
+}
+
+function makeGenerationSeller(bundle: Bundle) {
+  const seller = bundle.seller;
+  if (!seller) throw new Error("Seller input belum lengkap.");
+  return {
+    brand: seller.brand ?? undefined,
+    niche: seller.niche ?? undefined,
+    audience: seller.audience ?? undefined,
+    promptCount: seller.prompt_count ?? 10,
+    prompt_count: seller.prompt_count ?? 10,
+    tone: seller.tone ?? "Friendly",
+    confirmedDescription: seller.confirmed_product_description ?? undefined,
+    confirmed_product_description: seller.confirmed_product_description ?? undefined,
+    license: seller.license ?? undefined,
+    language: seller.language ?? undefined,
+    target_market: seller.target_market ?? undefined,
+    target_price: seller.target_price ?? undefined,
   };
-  return map[s] ?? s;
 }
 
-export const CHUNK_STATUS_LABEL: Record<string, string> = {
-  pending: "Belum dibuat",
-  running: "Sedang dibuat",
-  ready_for_ack: "Aman",
-  acked: "Selesai",
-  failed: "Perlu diperbaiki",
-};
-
-export interface ArchitecturePayload {
-  product_positioning: string;
-  target_audience_fit: string;
-  weakness_detection: string;
-  prompt_architecture_overview: string;
-  marketplace_preview: string;
-  qc_readiness: string;
+async function persistQC(runId: string, ownerId: string, qc: ReturnType<typeof runQC>, existingQcId?: string) {
+  if (existingQcId) {
+    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", existingQcId);
+  } else {
+    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
+  }
 }
 
-export const FORBIDDEN_CLAIMS = [
-  "guaranteed sales",
-  "guaranteed income",
-  "proven conversion",
-  "official marketplace partner",
-  "marketplace-approved",
-  "marketplace-approved product",
-  "automatic marketplace publishing",
-  "auto-publish",
-  "uploads automatically to marketplace",
-  "fake testimonials",
-  "fake market validation",
-  "fake citations",
-  "fake DOI",
-  "dijamin laku",
-  "pasti laris",
-  "pasti closing",
-];
+function deriveReady(qc: ReturnType<typeof runQC>, bundle: Bundle): boolean {
+  const payload = bundle.manifest?.payload as any;
+  const requiredFiles = expectedFiles(payload);
+  const moduleFiles = new Set(bundle.modules.map((m) => m.file_name));
+  const allExpectedPresent = requiredFiles.every((file) => moduleFiles.has(file));
+  const allAcked = bundle.modules.length > 0 && bundle.modules.every((m) => m.status === "acked" && m.validation === "PASS" && m.content);
+  const noApi = bundle.modules.every((m) => !isForbiddenModuleKey(m.module_key) && !isForbiddenModuleKey(m.file_name));
+  return Boolean(allExpectedPresent && allAcked && noApi && qc.score >= QC_THRESHOLDS.MIN_SELL_READY && qc.blocking_errors === 0);
+}
 
-export const PLACEHOLDER_PATTERNS = [
-  /Konten otomatis untuk modul/i,
-  /Lorem ipsum/i,
-  /\[TODO\]/i,
-  /\[FILL\]/i,
-  /<placeholder>/i,
-  /continues\.\.\./i,
-  /repeat for remaining prompts/i,
-  /same as above/i,
-  /see above/i,
-  /due to response length limits/i,
-];
+async function runAndPersistQC(runId: string, bundleBefore: Bundle) {
+  const latest = await getRunBundle(runId);
+  if (!latest.seller || !latest.run) throw new Error("Run belum siap untuk QC.");
+  const qc = runQC({
+    promptCount: latest.seller.prompt_count ?? 10,
+    modules: latest.modules,
+    anchors: latest.seller.key_anchors ?? [],
+    confirmedDescription: latest.seller.confirmed_product_description ?? "",
+    marketplaces: latest.run.marketplaces ?? [],
+  });
 
-export const STAGING_EMAIL = "bisnis@internal.local";
+  const seller = makeGenerationSeller(latest);
+  const syncedManifest = generateSyncedManifestContent({ seller, adapter: latest.run.adapter, marketplaces: latest.run.marketplaces ?? [], qc });
+  const actualScorecard = generateActualQCScorecardContent({ seller, qc });
+
+  const manifestModule = latest.modules.find((m) => m.file_name === "12_Product_Manifest.json");
+  if (manifestModule) {
+    await supabase
+      .from("output_modules")
+      .update({ content: syncedManifest, validation: "PASS", status: "acked" })
+      .eq("id", manifestModule.id);
+    await supabase
+      .from("batch_chunks")
+      .update({ status: "acked", validation: "PASS", acked: true })
+      .eq("module_id", manifestModule.id);
+  }
+
+  const scorecardModule = latest.modules.find((m) => m.file_name === "QC_Scorecard.md");
+  if (scorecardModule) {
+    await supabase
+      .from("output_modules")
+      .update({ content: actualScorecard, validation: "PASS", status: "acked" })
+      .eq("id", scorecardModule.id);
+    await supabase
+      .from("batch_chunks")
+      .update({ status: "acked", validation: "PASS", acked: true })
+      .eq("module_id", scorecardModule.id);
+  }
+
+  await persistQC(runId, latest.run.owner_id, qc, latest.qc?.id);
+  const refreshed = await getRunBundle(runId);
+  const status: RunStatus = deriveReady(qc, refreshed) ? "READY_FOR_SELLER_REVIEW" : qc.score >= QC_THRESHOLDS.MIN_SELL_READY ? "FILES_PARTIAL" : "CHUNK_VALIDATION_FAILED";
+  await supabase.from("runs").update({ status }).eq("id", runId);
+  return { qc, status, latest: refreshed, previous: bundleBefore };
+}
+
+export async function ensureQcArtifactsSynced(runId: string) {
+  const before = await getRunBundle(runId);
+  if (!before.manifest || !before.seller || !before.run) throw new Error("Manifest/seller/run belum siap untuk sync QC.");
+  await runAndPersistQC(runId, before);
+  return getRunBundle(runId);
+}
+
+export async function generateAllRemainingFiles(runId: string) {
+  return generateAllRemainingFilesWithProgress(runId);
+}
+
+export async function generateAllRemainingFilesWithProgress(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void,
+  options: { force?: boolean } = {}
+) {
+  const bundle = await getRunBundle(runId);
+  if (!bundle.manifest || !bundle.seller || !bundle.run) throw new Error("Manifest belum dibuat.");
+
+  const payload = bundle.manifest.payload as any;
+  const missingCore = REQUIRED_CORE_MODULES.map((m) => m.file).filter((file) => !expectedFiles(payload).includes(file));
+  if (missingCore.length) throw new Error(`Manifest belum sell-ready. Klik Build Manifest ulang. Missing: ${missingCore.join(", ")}`);
+
+  await supabase.from("runs").update({ status: "CHUNK_RUNNING" as RunStatus }).eq("id", runId);
+
+  const targets = options.force ? bundle.modules : bundle.modules.filter((m) => m.status !== "acked" || m.validation !== "PASS");
+  const total = targets.length;
+  const startedAt = Date.now();
+  const seller = makeGenerationSeller(bundle);
+  let i = 0;
+
+  for (const module of targets) {
+    i += 1;
+    onProgress?.(i, total, module.file_name);
+    if (Date.now() - startedAt > 60000) throw new Error("Generate terlalu lama. Klik Retry atau lanjutkan dari file terakhir.");
+    if (isForbiddenModuleKey(module.module_key) || isForbiddenModuleKey(module.file_name)) {
+      await supabase.from("output_modules").update({ status: "failed", validation: "FAIL", content: null }).eq("id", module.id);
+      await supabase.from("batch_chunks").update({ status: "failed", validation: "FAIL", acked: false }).eq("module_id", module.id);
+      continue;
+    }
+    const output = generateModuleContent({
+      moduleKey: module.module_key,
+      fileName: module.file_name,
+      seller,
+      marketplaces: bundle.run.marketplaces ?? [],
+      adapter: bundle.run.adapter,
+    });
+    const newStatus = output.validation === "PASS" ? "acked" : "failed";
+    await supabase.from("output_modules").update({ content: output.content, validation: output.validation, status: newStatus }).eq("id", module.id);
+    await supabase.from("batch_chunks").update({ status: newStatus, validation: output.validation, acked: newStatus === "acked" }).eq("module_id", module.id);
+  }
+
+  await supabase.from("marketplace_bundle_results").delete().eq("run_id", runId);
+  if ((bundle.run.marketplaces ?? []).length) {
+    await supabase.from("marketplace_bundle_results").insert(
+      (bundle.run.marketplaces ?? []).map((m) => ({
+        owner_id: bundle.run!.owner_id,
+        run_id: runId,
+        marketplace: m,
+        payload: { mode: "MANUAL_UPLOAD_ONLY", note: `Draft listing untuk ${m} siap. Upload manual dan seller review wajib.` },
+        validation: "PASS",
+      }))
+    );
+  }
+
+  await runAndPersistQC(runId, bundle);
+}
+
+export async function retryModule(moduleId: string) {
+  await supabase.from("output_modules").update({ status: "pending", validation: "unknown", content: null }).eq("id", moduleId);
+  await supabase.from("batch_chunks").update({ status: "pending", acked: false, validation: "unknown" }).eq("module_id", moduleId);
+}
+
+function approvalDiagnostics(bundle: Bundle): string[] {
+  const messages: string[] = [];
+  const qcPayload = bundle.qc?.payload as any;
+  const payload = bundle.manifest?.payload as any;
+  if (!bundle.manifest) messages.push("Manifest belum dibuat.");
+  if (!bundle.qc) messages.push("QC belum dijalankan.");
+  if (qcPayload) {
+    if ((qcPayload.score ?? 0) < QC_THRESHOLDS.MIN_SELL_READY) messages.push(`QC score ${qcPayload.score ?? 0} masih di bawah ${QC_THRESHOLDS.MIN_SELL_READY}.`);
+    if ((qcPayload.blocking_errors ?? 0) > 0) messages.push(`QC masih punya ${qcPayload.blocking_errors} blocking error.`);
+  }
+  if (payload) {
+    const files = expectedFiles(payload);
+    const outputByFile = new Map(bundle.modules.map((m) => [m.file_name, m]));
+    const missing = files.filter((file) => !outputByFile.has(file));
+    if (missing.length) messages.push(`Output module belum lengkap: ${missing.join(", ")}`);
+    const notAcked = files.map((file) => outputByFile.get(file)).filter((m): m is OutputModule => Boolean(m)).filter((m) => m.status !== "acked" || m.validation !== "PASS" || !m.content);
+    if (notAcked.length) messages.push(`Masih ada file belum PASS/ACKED: ${notAcked.map((m) => m.file_name).join(", ")}`);
+    const api = bundle.modules.filter((m) => isForbiddenModuleKey(m.module_key) || isForbiddenModuleKey(m.file_name));
+    if (api.length) messages.push(`Ditemukan API_* module: ${api.map((m) => m.file_name).join(", ")}`);
+  }
+  return messages;
+}
+
+export async function approvePackage(runId: string) {
+  const bundle = await getRunBundle(runId);
+  if (!bundle.run) throw new Error("Run tidak ditemukan.");
+  const latest = await runAndPersistQC(runId, bundle);
+  const refreshed = await getRunBundle(runId);
+  const messages = approvalDiagnostics(refreshed);
+  if (messages.length || latest.qc.score < QC_THRESHOLDS.MIN_SELL_READY || latest.qc.blocking_errors > 0) {
+    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ") || "Periksa QC terlebih dahulu."}`);
+  }
+  await supabase.from("runs").update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() }).eq("id", runId);
+  await supabase.from("exports").insert({
+    owner_id: bundle.run.owner_id,
+    run_id: runId,
+    payload: {
+      mode: "MANUAL_UPLOAD_ONLY",
+      qc_score: latest.qc.score,
+      qc_status: latest.qc.status,
+      files: refreshed.modules.map((m) => ({ file: m.file_name, key: m.module_key })),
+      approved_at: new Date().toISOString(),
+    },
+  });
+}
+
+export interface RegenerateSummary {
+  modulesRegenerated: number;
+  filesUpdated: string[];
+  qcRerun: boolean;
+  blockingBefore: number;
+  blockingAfter: number;
+  runStatus: string;
+  scoreBefore?: number;
+  scoreAfter?: number;
+}
+
+async function regenerateInternal(
+  runId: string,
+  targets: OutputModule[],
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const before = await getRunBundle(runId);
+  if (!before.seller || !before.run || !before.manifest) throw new Error("Run belum siap untuk regenerate.");
+  const beforePayload = before.qc?.payload as any;
+  const blockingBefore = before.qc?.blocking_errors ?? 0;
+  const scoreBefore = beforePayload?.score ?? 0;
+  const seller = makeGenerationSeller(before);
+  const targetIds = targets.map((m) => m.id);
+  if (targetIds.length) {
+    await supabase.from("output_modules").update({ status: "pending", validation: "unknown", content: null }).in("id", targetIds);
+    await supabase.from("batch_chunks").update({ status: "pending", acked: false, validation: "unknown" }).in("module_id", targetIds);
+  }
+  const filesUpdated: string[] = [];
+  let i = 0;
+  for (const module of targets) {
+    i += 1;
+    onProgress?.(i, targets.length, module.file_name);
+    const output = generateModuleContent({
+      moduleKey: module.module_key,
+      fileName: module.file_name,
+      seller,
+      marketplaces: before.run.marketplaces ?? [],
+      adapter: before.run.adapter,
+    });
+    const newStatus = output.validation === "PASS" ? "acked" : "failed";
+    const update = await supabase.from("output_modules").update({ content: output.content, validation: output.validation, status: newStatus }).eq("id", module.id).select("file_name");
+    if (!update.error && update.data?.length) filesUpdated.push(module.file_name);
+    await supabase.from("batch_chunks").update({ status: newStatus, validation: output.validation, acked: newStatus === "acked" }).eq("module_id", module.id);
+  }
+  const { qc, status } = await runAndPersistQC(runId, before);
+  return {
+    modulesRegenerated: targets.length,
+    filesUpdated,
+    qcRerun: true,
+    blockingBefore,
+    blockingAfter: qc.blocking_errors,
+    runStatus: status,
+    scoreBefore,
+    scoreAfter: qc.score,
+  };
+}
+
+export async function regeneratePackageContent(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const bundle = await getRunBundle(runId);
+  return regenerateInternal(runId, bundle.modules, onProgress);
+}
+
+export async function hardRegenerateFailedModules(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const bundle = await getRunBundle(runId);
+  const qcPayload = (bundle.qc?.payload as any) ?? {};
+  const errorText = [...(qcPayload.errors ?? []), ...(qcPayload.warnings ?? [])].join("\n");
+  const targets = bundle.modules.filter((m) => m.status === "failed" || m.validation === "FAIL" || errorText.includes(m.file_name));
+  if (!targets.length) {
+    return {
+      modulesRegenerated: 0,
+      filesUpdated: [],
+      qcRerun: false,
+      blockingBefore: bundle.qc?.blocking_errors ?? 0,
+      blockingAfter: bundle.qc?.blocking_errors ?? 0,
+      runStatus: bundle.run?.status ?? "UNKNOWN",
+      scoreBefore: qcPayload.score ?? 0,
+      scoreAfter: qcPayload.score ?? 0,
+    };
+  }
+  return regenerateInternal(runId, targets, onProgress);
+}
+
+export async function upgradePackageToSellReady(
+  runId: string,
+  onProgress?: (i: number, total: number, file: string) => void
+): Promise<RegenerateSummary> {
+  const first = await getRunBundle(runId);
+  const payload = first.manifest?.payload as any;
+  const expected = expectedKeys(payload);
+  const needsManifest = !first.manifest || REQUIRED_CORE_MODULES.some((m) => !expected.includes(m.key));
+  if (needsManifest) await buildManifest(runId);
+  await supabase.from("runs").update({ status: "UPGRADE_IN_PROGRESS" as RunStatus }).eq("id", runId);
+  const bundle = await getRunBundle(runId);
+  const qcPayload = (bundle.qc?.payload as any) ?? {};
+  const problemText = [...(qcPayload.errors ?? []), ...(qcPayload.warnings ?? [])].join("\n");
+  const targets = bundle.modules.filter((m) => {
+    const missing = !m.content || m.status !== "acked" || m.validation !== "PASS";
+    const weak = problemText.includes(m.file_name);
+    return missing || weak;
+  });
+  return regenerateInternal(runId, targets.length ? targets : bundle.modules, onProgress);
+}
+
+export async function reopenForRegeneration(runId: string) {
+  await supabase.from("runs").update({ status: "READY_FOR_SELLER_REVIEW" as RunStatus, approved_at: null }).eq("id", runId);
+}
