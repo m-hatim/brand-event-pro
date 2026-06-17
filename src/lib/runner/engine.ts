@@ -1,4 +1,4 @@
-// Deterministic mock engine v3.4.6 — canonical local robustness patch.
+// Deterministic mock engine v3.4.7 — canonical local robustness patch.
 // Adapter-specific PromptBook/Sample/Listing + QC/Manifest sync.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
@@ -71,6 +71,7 @@ export type ResolvedAdapter =
   | "RESEARCH"
   | "CONTENT_CREATION"
   | "BUSINESS_MARKETING"
+  | "EVIDENCE_HANDBOOK"
   | "CUSTOM";
 
 export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter {
@@ -84,6 +85,7 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
     "RESEARCH",
     "CONTENT_CREATION",
     "BUSINESS_MARKETING",
+    "EVIDENCE_HANDBOOK",
   ];
   if (selected && selected !== "CUSTOM" && known.includes(selected)) return selected as ResolvedAdapter;
 
@@ -92,6 +94,7 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
   if (/(image|gambar|ilustrasi|midjourney|sdxl|flux)/.test(n)) return "TEXT_TO_IMAGE";
   if (/(edit foto|retouch|photoshop|edit gambar)/.test(n)) return "IMAGE_EDITING";
   if (/(video|reel|tiktok|runway|sora|veo)/.test(n)) return "TEXT_TO_VIDEO";
+  if (/(handbook|vault|playbook|field guide|guidebook|reference pack|referensi kuat|evidence[-\s]?based handbook|supplement|suplemen|nutrition|nutrisi|fitness|health guide|claim checker|source log|evidence table)/.test(n)) return "EVIDENCE_HANDBOOK";
   if (/(academic|akademik|writing|penulisan|skripsi|tesis|jurnal|paper|laporan kasus|case report|case reflection|keperawatan|medis|medical|clinical|klinis|ners|evidence[-\s]?based)/.test(n)) return "ACADEMIC_WRITING";
   if (/(riset|research|literatur)/.test(n)) return "RESEARCH";
   if (/(konten|caption|copywriting|sosial media|content)/.test(n)) return "CONTENT_CREATION";
@@ -129,6 +132,7 @@ function adapterThemeAnchors(adapter: ResolvedAdapter): string[] {
     case "RESEARCH": return ["research question", "literature mapping", "sintesis", "analisis", "insight"];
     case "CONTENT_CREATION": return ["hook", "caption", "carousel", "script", "content pillar"];
     case "BUSINESS_MARKETING": return ["positioning", "USP", "funnel", "objection handling", "sales page"];
+    case "EVIDENCE_HANDBOOK": return ["evidence table", "claim checker", "source verification", "safety disclaimer", "reference log", "handbook chapters"];
     default: return ["paket prompt rapi", "panduan pemakaian", "template digital", "seller review"];
   }
 }
@@ -599,6 +603,28 @@ const ADAPTER_CONFIGS: Record<Exclude<ResolvedAdapter, "CUSTOM">, AdapterConfig>
     checklist: ["Positioning jelas", "USP spesifik", "Objection ditangani", "Klaim tidak berlebihan", "CTA jelas", "Harga ditulis sebagai heuristic jika perlu"],
     mistakes: ["USP terlalu umum", "Menjamin closing", "Tidak menyebut audience", "Menggunakan pressure tactic berlebihan"],
   },
+  EVIDENCE_HANDBOOK: {
+    topicTitles: [
+      "Handbook Scope & Reader Promise Prompt",
+      "Evidence Table Builder Prompt",
+      "Source Verification & Citation Log Prompt",
+      "Claim Strength Grading Prompt",
+      "Chapter Outline & Section Writer Prompt",
+      "Risk, Contraindication & Limitation Prompt",
+      "Myth vs Evidence Explainer Prompt",
+      "Reference-Backed FAQ Builder Prompt",
+      "Update Log & Versioning Prompt",
+      "Final Evidence Handbook QA Checklist",
+    ],
+    contextRole: "evidence-based handbook architect yang membuat handbook, vault, reference guide, dan playbook berbasis sumber terverifikasi",
+    bestFor: "seller produk digital, researcher, educator, coach, writer, dan creator yang membuat handbook berbasis referensi",
+    outputType: "evidence-handbook-system",
+    variables: ["handbook_topic", "reader_profile", "scope", "source_list", "claim", "evidence_level", "limitation", "safety_note", "chapter_goal", "citation_style"],
+    safety: "Tidak boleh membuat sumber, DOI, studi, data, klaim kesehatan/keuangan/hukum, dosis, rekomendasi medis, atau angka yang tidak diberikan pengguna. Semua klaim harus diberi evidence level, limitation, dan source verification status.",
+    expected: "Handbook/vault framework berisi scope, chapter outline, evidence table, source log, claim checker, risk/limitation section, FAQ, update log, dan QA checklist tanpa klaim palsu.",
+    checklist: ["Scope handbook jelas", "Evidence table ada", "Source log ada", "Claim strength diberi level", "Safety/limitation tertulis", "Tidak ada referensi palsu", "Manual verification required"],
+    mistakes: ["Mengarang studi/DOI", "Memberi rekomendasi dosis/terapi tanpa sumber", "Menyamakan bukti lemah dengan fakta kuat", "Tidak menulis kontraindikasi/limitation", "Tidak membedakan claim dan evidence"],
+  },
   CODING_AUTOMATION: {
     topicTitles: [],
     contextRole: "senior fullstack architect",
@@ -720,6 +746,53 @@ function mdList(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
+function isAcademicCaseReportNiche(niche: string): boolean {
+  return /(laporan kasus|case report|case reflection|clinical|klinis|keperawatan|medis|medical|ners|patient|pasien|asuhan keperawatan|evidence[-\s]?based)/i.test(niche);
+}
+
+function adapterBuyerProblem(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  if (adapter === "ACADEMIC_WRITING" && isAcademicCaseReportNiche(seller.niche)) {
+    return "Mahasiswa kesehatan sering kesulitan menyusun laporan kasus klinis yang runtut, etis, berbasis bukti, dan aman secara sitasi. Tantangan utama biasanya ada pada penyusunan latar belakang, tinjauan pustaka, pembahasan klinis, refleksi, edukasi pasien, serta verifikasi sumber tanpa mengarang DOI, data, atau klaim medis.";
+  }
+  const map: Record<ResolvedAdapter, string> = {
+    TEXT_TO_IMAGE: "Seller sering menghasilkan visual prompt yang terlalu umum sehingga gambar produk tampak tidak konsisten, salah aspect ratio, background terlalu ramai, atau memunculkan watermark dan artefak teks.",
+    IMAGE_EDITING: "Seller/editor sering memberi instruksi edit foto yang terlalu kabur sehingga hasil retouch berubah berlebihan, warna produk tidak akurat, edge tampak halo, atau crop marketplace tidak aman.",
+    TEXT_TO_VIDEO: "Creator sering membuat brief video pendek yang tidak punya hook 3 detik, shot list, durasi scene, camera movement, voiceover, dan CTA yang jelas.",
+    ACADEMIC_WRITING: "Penulis akademik sering kesulitan menjaga struktur, logika argumen, etika sitasi, dan verifikasi sumber ketika memakai AI untuk menyusun draft.",
+    RESEARCH: "Tim riset sering punya topik luas tetapi belum memiliki pertanyaan riset, desain instrumen, triangulasi sumber, dan batasan analisis yang jelas.",
+    CONTENT_CREATION: "Creator sering membuat caption, hook, carousel, atau script yang generik, tidak konsisten dengan brand voice, dan terlalu bergantung pada klaim viral/FYP.",
+    BUSINESS_MARKETING: "Seller sering punya offer yang menarik tetapi positioning, USP, sales page, funnel, email, dan objection handling masih tidak spesifik dan berisiko overclaim.",
+    EVIDENCE_HANDBOOK: "Creator handbook/vault sering menyusun materi terlihat lengkap tetapi klaimnya tidak dipisahkan dari bukti, sumber belum diverifikasi, evidence level tidak jelas, dan risk/limitation sering hilang. Ini berbahaya terutama untuk topik kesehatan, suplemen, finansial, hukum, pendidikan, atau niche teknis.",
+    CODING_AUTOMATION: "Builder sering langsung coding tanpa PRD, user flow, schema, auth role, API planning, automation workflow, dan testing checklist yang rapi.",
+    CUSTOM: "Buyer sering membutuhkan prompt pack niche yang rapi tetapi input awal masih terlalu umum, variabel belum jelas, output format belum dikunci, dan QA gate belum tersedia.",
+  };
+  return map[adapter];
+}
+
+function adapterSolutionDetails(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string[] {
+  if (adapter === "ACADEMIC_WRITING" && isAcademicCaseReportNiche(seller.niche)) {
+    return [
+      "Prompt akademik untuk menyusun judul, gap, latar belakang, tinjauan pustaka, struktur laporan kasus, pembahasan klinis, refleksi, edukasi pasien, dan QA final.",
+      "Citation ethics guard: tidak membuat sitasi/DOI/sumber palsu dan selalu meminta pengguna memverifikasi sumber.",
+      "Clinical safety guard: output hanya membantu struktur penulisan, bukan menggantikan diagnosis, keputusan klinis, bimbingan dosen, atau kebijakan institusi.",
+      "Sample Input/Output dibuat spesifik untuk laporan kasus klinis, bukan contoh akademik umum seperti R&D/e-LKPD.",
+    ];
+  }
+  const map: Record<ResolvedAdapter, string[]> = {
+    TEXT_TO_IMAGE: ["Final image prompts dengan lighting, lens, background, composition, aspect ratio, dan negative prompt.", "Thumbnail/social visual guidance untuk marketplace dan konten.", "QA checklist untuk mencegah watermark, blur, distorted text, extra objects, dan wrong material."],
+    IMAGE_EDITING: ["Brief retouch konkret untuk background cleanup, object cleanup, lighting correction, color correction, crop, export spec.", "Before-after edit brief dan style consistency guard.", "QA checklist agar edit tidak mengubah bentuk, warna, dan klaim visual produk."],
+    TEXT_TO_VIDEO: ["Hook 3 detik, scene breakdown, shot list, camera movement, transition, voiceover, storyboard, CTA.", "Durasi per scene dan pacing prompt yang siap dipakai untuk short-form video.", "No guaranteed viral/FYP guard."],
+    ACADEMIC_WRITING: ["Prompt title/gap, introduction, literature review, methodology, results-discussion, abstract, paraphrase, citation ethics, limitation, final QA.", "No fake citation/DOI guard dan verifikasi sumber manual.", "Struktur academic draft siap direview, bukan jasa joki."],
+    RESEARCH: ["Research question framing, literature mapping, triangulation, interview guide, survey design, thematic analysis, insight synthesis.", "Limitation dan no fabricated data guard.", "Framework riset yang dapat direview manual."],
+    CONTENT_CREATION: ["Hook, caption, carousel, short video script, calendar, storytelling angle, brand voice, repurposing, engagement prompt.", "No guaranteed viral/FYP/engagement guard.", "Content QA untuk brand consistency."],
+    BUSINESS_MARKETING: ["Positioning, USP, sales page, funnel, email sequence, objection handling, pricing angle, campaign, lead magnet.", "No guaranteed sales/conversion/revenue guard.", "Ethical marketing checklist."],
+    EVIDENCE_HANDBOOK: ["Evidence-based handbook/vault builder untuk topik apa pun: suplemen, riset, pendidikan, productivity, market guide, atau domain expert reference.", "Evidence Table, Source Verification Log, Claim Strength Grading, Risk/Contraindication/Limitation, Myth vs Evidence, FAQ, dan Update Log.", "No fake source/DOI/data guard; semua klaim wajib diberi status sumber dan batasan sebelum dipakai/dijual."],
+    CODING_AUTOMATION: ["PRD, requirement interview, user flow, database schema, auth/role, frontend pages, backend/API logic, automation, testing/deployment.", "No secrets and security review guard.", "MVP scope control."],
+    CUSTOM: ["Prompt system niche dengan variables, output format, example input, QA checklist, dan safe use note.", "Custom mode inference untuk formula pack, corporate prompts, seller OS, atau productivity planner.", "Manual review and no overclaim guard."],
+  };
+  return map[adapter];
+}
+
 function productBrief(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
   return [
     `# Product Brief — ${seller.brand}`,
@@ -734,20 +807,28 @@ function productBrief(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAd
     `**Marketplace Draft:** ${marketplaces.join(", ") || "Belum dipilih"}`,
     "",
     "## Masalah Buyer",
-    "Buyer sering punya ide produk digital, tetapi prompt yang dipakai terlalu pendek sehingga output AI menjadi generik, tidak konsisten, dan sulit dijadikan brief kerja.",
+    adapterBuyerProblem(seller, adapter),
     "",
     "## Solusi Produk",
     seller.confirmed_product_description,
-    "Paket ini menyediakan PromptBook, PromptLibrary CSV, sample input/output, testing report, lisensi, pricing heuristic, thumbnail brief, checklist upload manual, assumption register, dan QC scorecard.",
+    "",
+    "### Yang Disediakan Paket Ini",
+    mdList(adapterSolutionDetails(seller, adapter)),
+    "",
+    "Paket ini menyediakan PromptBook, PromptLibrary CSV, sample input/output konkret, testing/quality checklist, lisensi, pricing heuristic, thumbnail brief, checklist upload manual, assumption register, manifest, dan QC scorecard.",
     "",
     "## Untuk Siapa",
-    mdList([seller.audience, "Seller produk digital yang ingin paket prompt lebih rapi", "Freelancer/creator yang ingin membuat draft teknis lebih cepat"]),
+    mdList([seller.audience, adapter === "ACADEMIC_WRITING" ? "Mahasiswa yang membutuhkan alat bantu struktur penulisan akademik etis, bukan jasa joki" : adapter === "EVIDENCE_HANDBOOK" ? "Creator/educator/seller yang ingin membuat handbook atau vault berbasis sumber terverifikasi" : "Seller produk digital yang ingin paket prompt lebih rapi", "Creator/freelancer yang butuh workflow prompt siap review"]),
     "",
     "## Tidak Cocok Untuk",
-    mdList(["Buyer yang mencari software jadi otomatis", "Buyer yang ingin jaminan income/sales", "Seller yang ingin publish otomatis via API marketplace"]),
+    mdList([adapter === "ACADEMIC_WRITING" ? "Buyer yang ingin joki akademik, sitasi palsu, DOI palsu, atau klaim medis tanpa verifikasi" : adapter === "EVIDENCE_HANDBOOK" ? "Buyer yang ingin klaim kesehatan/keuangan/hukum tanpa sumber, rekomendasi dosis/terapi, atau referensi palsu" : "Buyer yang mencari software jadi otomatis", "Buyer yang ingin jaminan income/sales/hasil tertentu", "Seller yang ingin publish otomatis via API marketplace"]),
     "",
     "## Catatan Aman",
-    "Manual upload only. Seller wajib mereview semua file dan memverifikasi kebijakan marketplace sebelum publish. Tidak ada jaminan penjualan atau hasil tertentu.",
+    adapter === "ACADEMIC_WRITING"
+      ? "Manual upload only. Produk ini adalah alat bantu struktur penulisan dan checklist akademik. Semua data klinis, sumber, sitasi, DOI, serta keputusan akademik/klinis wajib diverifikasi manual oleh pengguna, dosen, pembimbing, atau pihak berwenang."
+      : adapter === "EVIDENCE_HANDBOOK"
+        ? "Manual upload only. Produk ini membantu menyusun handbook/vault berbasis bukti, tetapi tidak otomatis memverifikasi sumber. Semua klaim, angka, dosis, rekomendasi, hukum, finansial, atau kesehatan wajib diverifikasi manual dengan sumber asli sebelum publish."
+        : "Manual upload only. Seller wajib mereview semua file dan memverifikasi kebijakan marketplace sebelum publish. Tidak ada jaminan penjualan atau hasil tertentu.",
   ].join("\n");
 }
 
@@ -803,7 +884,18 @@ function promptLibraryCsv(seller: ReturnType<typeof sellerMeta>, adapter: Resolv
 }
 
 function usageGuide(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const specific = adapter === "CODING_AUTOMATION" ? [
+  const specific = adapter === "EVIDENCE_HANDBOOK" ? [
+    "## Urutan Pakai untuk Evidence-Based Handbook / Vault",
+    "1. Mulai dari Scope & Reader Promise untuk mengunci topik, audiens, dan batasan klaim.",
+    "2. Kumpulkan sumber asli yang benar-benar tersedia; jangan membuat sumber atau DOI baru.",
+    "3. Buat Evidence Table: claim, source, evidence level, limitation, dan verification status.",
+    "4. Tulis chapter hanya dari klaim yang sudah punya sumber atau beri label [SOURCE NEEDED].",
+    "5. Tambahkan Risk/Limitation/Safety section terutama untuk niche kesehatan, suplemen, finansial, hukum, dan edukasi.",
+    "6. Jalankan Final Evidence Handbook QA sebelum menjual atau membagikan file.",
+    "",
+    "## Evidence Safety Gate",
+    "Jika sumber belum tersedia, output boleh membuat struktur, checklist, dan placeholder [SOURCE NEEDED], tetapi tidak boleh mengarang penulis, tahun, DOI, guideline, dosis, angka statistik, atau rekomendasi profesional.",
+  ] : adapter === "CODING_AUTOMATION" ? [
     "## Urutan Pakai untuk Coding & Automasi",
     "1. Mulai dari Product Idea Clarifier untuk memperjelas ide.",
     "2. Gunakan User Requirement Interview untuk menggali kebutuhan user.",
@@ -846,7 +938,65 @@ function usageGuide(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdap
 }
 
 function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const intro = [`# Sample Input & Output — ${seller.brand}`, "", "File ini berisi contoh konkret. Semua contoh tetap synthetic dan harus direview manual sebelum dipakai/dijual.", ""];
+  const intro = [
+    `# Sample Input & Output — ${seller.brand}`,
+    "",
+    "File ini berisi contoh konkret. Semua contoh tetap synthetic dan harus direview manual sebelum dipakai/dijual.",
+    "",
+  ];
+
+  if (adapter === "ACADEMIC_WRITING" && isAcademicCaseReportNiche(seller.niche)) {
+    return [
+      ...intro,
+      "## Sample 1: Clinical Case Report Background / Latar Belakang",
+      "**Sample User Input:**",
+      "```",
+      "case_topic: Tuberkulosis paru pada pasien dewasa dengan ketidakpatuhan minum obat; setting: Puskesmas; assignment_type: laporan kasus klinis; citation_style: APA 7; sources: hanya sumber yang diberikan pengguna; patient_data: gunakan data kasus yang sudah dianonimkan",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Draft Latar Belakang: Tuberkulosis paru masih menjadi masalah kesehatan masyarakat yang memerlukan penanganan berkelanjutan, terutama pada pasien dengan risiko ketidakpatuhan pengobatan. Dalam konteks pelayanan primer, laporan kasus dapat membantu menggambarkan hubungan antara faktor klinis, perilaku kesehatan, edukasi pasien, dan rencana monitoring. Bagian ini perlu menekankan urgensi kasus berdasarkan sumber yang benar-benar diberikan pengguna, bukan membuat angka epidemiologi, DOI, atau klaim klinis baru.",
+      "Citation Guard: Tulis [SISIPKAN SUMBER TERVERIFIKASI] jika sumber belum tersedia. Jangan mengarang nama jurnal, tahun, DOI, atau guideline.",
+      "Clinical Safety Note: Draft ini tidak menggantikan diagnosis dokter, keputusan terapi, atau arahan pembimbing klinik.",
+      "```",
+      "",
+      "## Sample 2: Case Discussion / Pembahasan Klinis Berbasis Bukti",
+      "**Sample User Input:**",
+      "```",
+      "diagnosis: CKD dengan edema anasarka; clinical_findings: edema pretibia, sesak, penurunan albumin; nursing_focus: monitoring cairan dan edukasi diet; source_list: buku ajar + guideline yang diberikan pengguna; limitation: data lab tidak lengkap",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Pembahasan Draft: Temuan edema anasarka pada pasien CKD dapat dibahas sebagai manifestasi gangguan keseimbangan cairan yang perlu dinilai bersama data klinis dan pemeriksaan penunjang. Pada bagian pembahasan, hubungkan temuan fisik, kemungkinan mekanisme, intervensi keperawatan, dan edukasi pasien secara hati-hati. Karena data laboratorium belum lengkap, tuliskan keterbatasan: 'Interpretasi ini bersifat terbatas dan memerlukan verifikasi dengan data pemeriksaan penunjang serta arahan klinis pembimbing.'",
+      "Evidence Guard: Jangan menyatakan hubungan kausal atau rekomendasi terapi spesifik jika sumber dan data pasien belum lengkap.",
+      "```",
+      "",
+      "## Sample 3: Citation Ethics & No Fake DOI Checker",
+      "**Sample User Input:**",
+      "```",
+      "claim: edukasi pasien meningkatkan kepatuhan terapi TB; sources: belum diberikan; requested_output: paragraf tinjauan pustaka dengan sitasi APA 7",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Status: HOLD. Klaim belum boleh ditulis sebagai fakta akademik karena sumber belum diberikan. Output aman yang boleh dibuat: 'Edukasi pasien sering dibahas sebagai salah satu komponen dukungan kepatuhan terapi, namun pernyataan ini perlu didukung oleh sumber yang terverifikasi.'",
+      "Action Required: Minta pengguna menambahkan minimal 2 sumber valid. Setelah sumber tersedia, bantu ringkas argumen tanpa mengubah makna dan tanpa membuat DOI palsu.",
+      "Academic Integrity Note: Jangan membuat referensi, DOI, nama penulis, tahun, data pasien, atau guideline yang tidak diberikan pengguna.",
+      "```",
+      "",
+      "## Sample 4: Patient Education Draft / Edukasi Pasien",
+      "**Sample User Input:**",
+      "```",
+      "case: pasien DM tipe 2; education_goal: kepatuhan diet dan kontrol gula darah; language_level: mudah dipahami pasien; forbidden: jangan beri dosis obat; output_format: poin edukasi + teach-back question",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Poin Edukasi: 1) Jelaskan pentingnya makan teratur sesuai anjuran tenaga kesehatan. 2) Dorong pasien mencatat pola makan dan gejala yang dirasakan. 3) Anjurkan kontrol sesuai jadwal dan membawa catatan gula darah jika tersedia. 4) Hindari memberi dosis obat baru; arahkan pasien berkonsultasi dengan tenaga kesehatan.",
+      "Teach-back Question: 'Bisa Ibu/Bapak jelaskan kembali kapan harus kontrol dan apa yang perlu dicatat di rumah?'",
+      "Safety Note: Edukasi ini bersifat umum dan harus disesuaikan oleh tenaga kesehatan/pembimbing klinik.",
+      "```",
+    ].join("\n") + "\n";
+  }
+
   const blocks: Record<ResolvedAdapter, string[]> = {
     TEXT_TO_IMAGE: [
       "## Sample 1: Product Image Prompt",
@@ -910,21 +1060,21 @@ function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: Resol
     ACADEMIC_WRITING: [
       "## Sample 1: Research Gap Draft",
       "**Sample User Input:**",
-      "```\ntopic: penggunaan e-LKPD berbasis PBL; level: SMA; citation_style: APA 7; sources: user-provided only\n```",
+      `\`\`\`\ntopic: ${seller.niche}; assignment_type: academic paper/case report; citation_style: APA 7; sources: user-provided only\n\`\`\``,
       "**Example AI Output:**",
-      "```\nDraft Gap: Penelitian mengenai media pembelajaran digital menunjukkan bahwa interaktivitas dapat membantu keterlibatan peserta didik, tetapi kajian yang secara spesifik menghubungkan e-LKPD berbasis PBL dengan peningkatan literasi pada konteks materi tertentu masih perlu diperjelas. Berdasarkan sumber yang diberikan pengguna, bagian ini perlu menekankan keterbatasan penelitian terdahulu pada aspek konteks sekolah, materi, instrumen, dan model pengembangan.\nCitation Note: Jangan membuat sitasi/DOI baru. Masukkan hanya sumber yang benar-benar disediakan dan terverifikasi.\n```",
+      "```\nDraft Gap: Topik perlu ditempatkan dalam konteks akademik yang jelas: masalah utama, keterbatasan studi terdahulu, konteks populasi, dan alasan penelitian/penulisan dilakukan. Jika sumber belum diberikan, tulis [SISIPKAN SUMBER TERVERIFIKASI] dan jangan membuat sitasi atau DOI baru.\nIntegrity Note: semua sumber, angka, dan klaim harus diverifikasi manual.\n```",
       "",
       "## Sample 2: Methodology Structure",
       "**Sample User Input:**",
-      "```\nmethod: R&D ADDIE; data: validation, teacher response, student response, pretest-posttest\n```",
+      "```\nmethod: literature review / case report / qualitative; data: user-provided only; limitation: source availability\n```",
       "**Example AI Output:**",
-      "```\nMetode dapat disusun dalam lima tahap ADDIE: Analysis untuk mengidentifikasi kebutuhan, Design untuk merancang storyboard dan instrumen, Development untuk membuat media dan validasi ahli, Implementation untuk uji coba terbatas, dan Evaluation untuk merevisi berdasarkan data validasi/respons serta hasil pretest-posttest.\nIntegrity Note: angka hasil uji tidak boleh dibuat jika data belum tersedia.\n```",
+      "```\nMetode ditulis dengan menjelaskan desain, sumber data, kriteria pemilihan sumber/kasus, langkah analisis, dan batasan. Hindari membuat data, instrumen, atau hasil yang belum diberikan pengguna.\nIntegrity Note: angka hasil uji tidak boleh dibuat jika data belum tersedia.\n```",
       "",
       "## Sample 3: Citation Ethics Checker",
       "**Sample User Input:**",
-      "```\nclaim: H5P improves learning outcomes; sources: not provided\n```",
+      "```\nclaim: intervention improves outcome; sources: not provided\n```",
       "**Example AI Output:**",
-      "```\nStatus: HOLD. Klaim belum boleh ditulis sebagai fakta karena sumber belum diberikan. Tulis sebagai dugaan awal atau minta pengguna memberikan artikel/jurnal yang valid.\n```",
+      "```\nStatus: HOLD. Klaim belum boleh ditulis sebagai fakta karena sumber belum diberikan. Minta pengguna memberikan artikel/jurnal/guideline valid atau tulis klaim sebagai dugaan awal yang perlu diverifikasi.\n```",
     ],
     RESEARCH: [
       "## Sample 1: Research Question Framing",
@@ -956,89 +1106,92 @@ function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: Resol
       "**Sample User Input:**",
       "```\ntopic: 5 kesalahan prompt pemula\n```",
       "**Example AI Output:**",
-      "```\nSlide 1: 5 Kesalahan Prompt Pemula. Slide 2: Tidak memberi role. Slide 3: Tidak menjelaskan audiens. Slide 4: Tidak menentukan format output. Slide 5: Tidak memberi contoh. Slide 6: Tidak review hasil. Slide 7: Template singkat yang bisa dicoba.\n```",
+      "```\nSlide 1: 5 Kesalahan Prompt Pemula. Slide 2: Tidak memberi role. Slide 3: Tidak menjelaskan audiens. Slide 4: Tidak menentukan format output. Slide 5: Tidak memberi contoh. Slide 6: Tidak melakukan review. Slide 7: CTA: simpan checklist ini.\n```",
       "",
-      "## Sample 3: Repurpose Plan",
+      "## Sample 3: Content Calendar",
       "**Sample User Input:**",
-      "```\nsource: carousel edukasi prompt\n```",
+      "```\nfrequency: 3 posts/week; goal: awareness + trust\n```",
       "**Example AI Output:**",
-      "```\nRepurpose: 1 carousel, 1 short video 30 detik, 1 thread, 3 story poll, 1 email tip. Tidak ada klaim pasti viral/FYP.\n```",
+      "```\nWeek Plan: Senin edukasi, Rabu behind-the-scenes, Jumat soft selling. Setiap post punya hook, value, example, CTA save/share. Tidak ada klaim viral/FYP.\n```",
     ],
     BUSINESS_MARKETING: [
-      "## Sample 1: Positioning",
+      "## Sample 1: Positioning Statement",
       "**Sample User Input:**",
-      "```\noffer: prompt pack marketplace; audience: seller pemula; pain: bingung bikin produk digital rapi\n```",
+      "```\noffer: prompt pack untuk seller UMKM; audience: pemilik toko online; pain: output AI generik; price: Rp79.000\n```",
       "**Example AI Output:**",
-      "```\nPositioning: Prompt pack praktis untuk seller pemula yang ingin membuat produk digital lebih rapi tanpa mulai dari nol. Fokus utama bukan menjanjikan sales, tetapi membantu struktur produk, file delivery, dan draft listing agar lebih siap direview.\n```",
+      "```\nPositioning: Untuk pemilik toko online yang ingin output AI lebih rapi tanpa belajar prompt engineering dari nol, paket ini menyediakan template prompt siap edit dengan contoh penggunaan dan checklist kualitas. Klaim dibatasi pada bantuan workflow, bukan jaminan penjualan.\n```",
       "",
       "## Sample 2: Sales Page Outline",
       "**Sample User Input:**",
-      "```\nproduct: prompt kit konten; target: social media admin UMKM\n```",
+      "```\nproduct: prompt pack; goal: explain value; tone: clear, honest\n```",
       "**Example AI Output:**",
-      "```\nHero: Bikin ide konten lebih cepat dan terstruktur. Problem: konten sering mentok karena brief tidak jelas. Solution: 10 prompt untuk hook, caption, carousel, script, dan content calendar. Proof: tampilkan preview file, bukan klaim hasil. CTA: Download dan coba di workflow konten Anda.\n```",
+      "```\nHero: Prompt lebih rapi untuk kerja harian seller. Problem: output AI sering generic. Solution: prompt pack dengan struktur input, sample output, checklist. What You Get: PromptBook, CSV, Usage Guide. Disclaimer: hasil bergantung input dan tool AI.\n```",
       "",
       "## Sample 3: Objection Handling",
       "**Sample User Input:**",
-      "```\nobjection: saya bisa tanya AI sendiri gratis\n```",
+      "```\nobjection: saya bisa cari prompt gratis\n```",
       "**Example AI Output:**",
-      "```\nResponse: Betul, Anda bisa membuat prompt sendiri. Paket ini membantu menghemat waktu dengan struktur siap pakai, contoh input, checklist, dan file delivery yang sudah dirapikan.\n```",
+      "```\nResponse: Betul, prompt gratis banyak. Bedanya, paket ini disusun sebagai workflow lengkap: prompt utama, contoh input-output, checklist review, dan panduan upload manual. Jadi buyer tidak perlu merangkai dari nol.\n```",
     ],
     CODING_AUTOMATION: [
       "## Sample 1: PRD Generator",
       "**Sample User Input:**",
-      "```\nproduct_idea: inventory web app for small warehouse; users: admin, staff; features: stock in/out, report, role access\n```",
+      "```\nproduct_idea: inventory app for small shop; users: owner + cashier; stack: React + Supabase\n```",
       "**Example AI Output:**",
-      "```\nPRD: Goal: membuat inventory MVP. User roles: admin mengelola item/user/report, staff mencatat stock in/out. Core features: auth, item CRUD, movement log, dashboard stock, CSV export. Non-goals: accounting, barcode hardware. Acceptance criteria: setiap movement tersimpan dengan user_id dan timestamp.\n```",
+      "```\nPRD: Goal: membantu toko kecil mencatat stok dan transaksi. Users: owner, cashier. Core features: login, product CRUD, stock in/out, sales transaction, daily report. Non-goals: payment gateway, marketplace API. Acceptance criteria: cashier can create sale, owner can view report.\n```",
       "",
       "## Sample 2: Database Schema",
       "**Sample User Input:**",
-      "```\nentities: users, items, stock_movements\n```",
+      "```\nentities: products, transactions, users, stock_movements\n```",
       "**Example AI Output:**",
-      "```\nTables: profiles(id,user_id,role), items(id,sku,name,current_stock,min_stock), stock_movements(id,item_id,type,qty,note,created_by,created_at). Security: RLS per authenticated user and role.\n```",
+      "```\nTables: profiles(id,user_id,role), products(id,name,sku,price,stock), transactions(id,total,created_by), transaction_items(id,transaction_id,product_id,qty,price), stock_movements(id,product_id,type,qty,reason). Security: RLS by owner_id, cashier limited write.\n```",
       "",
       "## Sample 3: Deployment Checklist",
       "**Sample User Input:**",
-      "```\nstack: React + Supabase\n```",
+      "```\nplatform: Vercel + Supabase\n```",
       "**Example AI Output:**",
-      "```\nChecklist: env vars separated, RLS tested, no service role in frontend, build pass, preview tested, rollback plan, seed sample data removed.\n```",
+      "```\nChecklist: env vars set, RLS tested, seed data removed, build pass, auth redirect configured, error boundary, backup plan, no secret in repo, production URL tested.\n```",
+    ],
+    EVIDENCE_HANDBOOK: [
+      "## Sample 1: Evidence Table Builder",
+      "**Sample User Input:**",
+      "```\nhandbook_topic: supplement handbook untuk creatine; reader_profile: pemula fitness; claim: creatine membantu performa latihan intensitas tinggi; source_list: [paste sumber asli yang sudah diverifikasi]; citation_style: APA 7\n```",
+      "**Example AI Output:**",
+      "```\nEvidence Table Row:\nClaim: Creatine dapat membantu performa aktivitas intensitas tinggi tertentu.\nSource Status: SOURCE PROVIDED / VERIFY ORIGINAL.\nEvidence Level: tulis level hanya setelah sumber dibaca; jika belum, gunakan [EVIDENCE LEVEL PENDING].\nPlain-Language Summary: Jelaskan secara hati-hati tanpa menyebut hasil pasti.\nLimitation: Efek dapat berbeda antar individu dan konteks latihan.\nSafety Note: Jangan memberi dosis atau rekomendasi medis tanpa sumber dan konsultasi profesional.\n```",
+      "",
+      "## Sample 2: Chapter Outline & Source Guard",
+      "**Sample User Input:**",
+      "```\ntopic: handbook suplemen untuk pemula; chapters: manfaat, cara kerja, keamanan, interaksi, FAQ; forbidden: jangan buat DOI palsu, jangan kasih dosis final\n```",
+      "**Example AI Output:**",
+      "```\nChapter 1 — Cara Membaca Klaim Suplemen: jelaskan perbedaan claim, bukti, limitasi, dan konteks penggunaan.\nChapter 2 — Evidence Table: semua klaim harus mengacu pada source log.\nChapter 3 — Safety & Contraindication: tulis risiko umum dan wajib konsultasi tenaga profesional untuk kondisi khusus.\nChapter 4 — FAQ: jawab dengan bahasa sederhana dan label [SOURCE NEEDED] untuk klaim yang belum punya sumber.\n```",
+      "",
+      "## Sample 3: No Fake Reference Checker",
+      "**Sample User Input:**",
+      "```\nclaim: suplemen X pasti meningkatkan imun; sources: belum diberikan; output_requested: paragraf handbook dengan referensi kuat\n```",
+      "**Example AI Output:**",
+      "```\nStatus: HOLD. Klaim tidak boleh ditulis sebagai fakta kuat karena sumber belum diberikan. Output aman: 'Klaim ini memerlukan verifikasi dari sumber ilmiah yang relevan. Tambahkan sumber asli sebelum menyatakan manfaat.'\nAction Required: minta sumber, cek tahun, penulis, jurnal/penerbit, DOI/URL asli jika ada, dan batasan studi.\n```",
     ],
     CUSTOM: [
-      "## Sample 1: Prompt Engineering Formula Pack",
+      "## Sample 1: Custom Prompt System",
       "**Sample User Input:**",
-      "```\nniche: prompt formula lab; goal: reusable prompt framework; audience: creator produk digital\n```",
+      `\`\`\`\nniche: ${seller.niche}; audience: ${seller.audience}; goal: create repeatable premium prompt pack; output_format: markdown + csv\n\`\`\``,
       "**Example AI Output:**",
-      "```\nFormula: Role + Context + Task + Output Format + Constraints + Quality Bar. Example Prompt: Bertindak sebagai [ROLE]. Konteks: [CONTEXT]. Tugas: [TASK]. Output: [FORMAT]. Batasan: [CONSTRAINTS]. Sebelum final, cek [QUALITY BAR].\n```",
+      "```\nSystem Prompt: Anda adalah prompt product architect. Buat prompt pack niche yang terdiri dari 10 prompt unik, setiap prompt punya role, context, task, variables, expected output, QA checklist, common mistakes, dan safe use note. Semua klaim harus bisa diverifikasi dan tidak boleh menjanjikan hasil pasti.\n```",
       "",
-      "## Sample 2: Weakness Scanner",
+      "## Sample 2: Anti-Generic QA",
       "**Sample User Input:**",
-      "```\nprompt: buat caption jualan yang bagus\n```",
+      "```\noutput: prompt pack terasa terlalu umum\n```",
       "**Example AI Output:**",
-      "```\nWeakness: role tidak jelas, produk tidak disebut, audiens tidak ada, tone tidak ada, format output tidak ada. Refined Prompt: Bertindak sebagai copywriter UMKM...\n```",
+      "```\nFAIL: output tidak menyebut audience spesifik, use case, variabel input, format akhir, dan contoh filled input. Remediation: tambahkan 5 anchor niche, contoh input nyata, dan negative constraints.\n```",
       "",
-      "## Sample 3: Final QA",
+      "## Sample 3: Buyer Usage Guide",
       "**Sample User Input:**",
-      "```\noutput: prompt pack siap jual\n```",
+      "```\nbuyer_level: pemula; product_type: prompt pack\n```",
       "**Example AI Output:**",
-      "```\nQA: cek niche specificity, variable clarity, example input, expected output, safety note, no guaranteed outcome, no unsupported claims.\n```",
+      "```\nStep 1 pilih prompt sesuai kebutuhan. Step 2 isi variable. Step 3 jalankan di AI. Step 4 review dengan checklist. Step 5 ulangi dengan konteks lebih spesifik jika output masih umum.\n```",
     ],
   };
-  return [...intro, ...(blocks[adapter] || blocks.CUSTOM)].join("\n");
-}
-
-
-function promptTestingReport(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const prompts = buildPromptLibrary(adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
-  const lines = [`# Prompt Testing Report — ${seller.brand}`, "", "## Methodology", "Setiap prompt diuji secara sintetis menggunakan input pendek, input menengah, dan input yang kurang lengkap. Hasil diberi status PASS/PARTIAL/FAIL berdasarkan struktur, relevansi, keamanan klaim, dan kelengkapan output.", ""];
-  prompts.forEach((prompt, index) => {
-    lines.push(`## Test ${index + 1}: ${prompt.title}`);
-    lines.push(`**Primary Test Case:** ${prompt.example_filled_input}`);
-    lines.push("**Expected:** Output mengikuti expected output dan checklist prompt.");
-    lines.push("**Result:** PASS — template memaksa struktur output, variabel input, dan safe use note.");
-    lines.push("**Edge Case:** Jika input terlalu pendek, buyer perlu menambahkan konteks niche, audiens, dan tujuan output.");
-    lines.push("**Refinement:** Tambahkan contoh spesifik jika output AI masih terlalu umum.");
-    lines.push("");
-  });
-  return lines.join("\n");
+  return [...intro, ...(blocks[adapter] ?? blocks.CUSTOM)].join("\n") + "\n";
 }
 
 function qualityChecklist(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
@@ -1058,6 +1211,7 @@ function qualityChecklist(seller: ReturnType<typeof sellerMeta>, adapter: Resolv
     "- [ ] Sample Input/Output minimal 3 contoh.",
     "",
     "## Checklist Klaim Aman",
+    ...(adapter === "EVIDENCE_HANDBOOK" ? ["- [ ] Evidence Table berisi claim, source status, evidence level, limitation, dan verification status.", "- [ ] Tidak ada DOI, studi, penulis, tahun, dosis, angka, atau guideline yang dikarang.", "- [ ] Klaim kesehatan/keuangan/hukum diberi safety disclaimer dan source verification requirement.", "- [ ] Semua bagian yang belum punya sumber diberi label [SOURCE NEEDED] atau [VERIFY ORIGINAL].", ""] : []),
     "- [ ] Tidak menjanjikan income.",
     "- [ ] Tidak menjamin produk laku.",
     "- [ ] Tidak menjamin angka sales.",
@@ -1128,6 +1282,8 @@ function buyerFAQ(seller: ReturnType<typeof sellerMeta>): string {
     "## Apakah ini membuat web otomatis?",
     "Tidak. Ini adalah prompt pack untuk membantu menyusun draft, PRD, workflow, struktur, dan checklist. Bukan software auto-build.",
     "",
+    ...(seller.niche.toLowerCase().includes("handbook") || seller.niche.toLowerCase().includes("vault") || seller.niche.toLowerCase().includes("suplemen") || seller.niche.toLowerCase().includes("supplement") ? ["## Apakah handbook ini otomatis punya referensi kuat?", "Tidak otomatis. Prompt pack ini menyediakan struktur evidence table, source log, claim checker, dan QA. Sumber asli tetap harus dimasukkan dan diverifikasi manual oleh pengguna.", ""] : []),
+    "",
     "## Apakah perlu skill coding?",
     "Untuk prompt teknis, pemahaman dasar web/coding membantu. Pemula bisa mulai dari Beginner Mode.",
     "",
@@ -1171,7 +1327,7 @@ function thumbnailBrief(seller: ReturnType<typeof sellerMeta>, adapter: Resolved
     `Cover modern untuk paket prompt ${seller.niche} dengan kesan ${seller.tone.toLowerCase()}, rapi, dan teknis.`,
     "",
     "## Title Text",
-    `${seller.prompt_count} AI Prompts untuk ${adapter === "CODING_AUTOMATION" ? "Web Fullstack Automation" : seller.niche}`,
+    `${seller.prompt_count} AI Prompts untuk ${adapter === "CODING_AUTOMATION" ? "Web Fullstack Automation" : adapter === "EVIDENCE_HANDBOOK" ? "Evidence-Based Handbook / Vault" : seller.niche}`,
     "",
     "## Subtitle Text",
     "PromptBook + Sample + Checklist + Listing Draft",
@@ -1370,6 +1526,14 @@ function marketplaceListing(fileName: string, seller: ReturnType<typeof sellerMe
       benefits: ["PRD generator", "Database schema planning", "Auth/role planning", "Backend/API logic", "Testing/deployment checklist"],
       faq: ["Apakah ini membuat app otomatis? Tidak, ini prompt/blueprint.", "Apakah perlu coding? Untuk implementasi, ya.", "Apakah aman untuk production? Harus direview dan diuji."],
       tags: ["coding prompts", "PRD", "database", "fullstack automation"],
+    },
+    EVIDENCE_HANDBOOK: {
+      title: `${seller.brand} — Evidence-Based Handbook / Vault Builder untuk ${seller.niche}`,
+      hook: "Bangun handbook, vault, atau reference guide yang lebih serius: evidence table, source log, claim checker, limitation, safety note, dan update log sudah dipandu.",
+      description: `Paket ini membantu buyer menyusun handbook/vault berbasis referensi untuk ${seller.niche}. Cocok untuk suplemen, riset, edukasi, market guide, productivity, atau domain expert reference. Tidak membuat sumber, DOI, data, dosis, klaim medis/finansial/hukum, atau rekomendasi profesional secara otomatis.`,
+      benefits: ["Handbook scope & reader promise", "Evidence table builder", "Source verification log", "Claim strength grading", "Risk/limitation/safety section", "No fake reference checker", "Update log/versioning"],
+      faq: ["Apakah ini handbook jadi dengan referensi final? Tidak, ini prompt system dan framework; sumber asli wajib ditambahkan dan diverifikasi.", "Apakah boleh untuk suplemen/kesehatan? Bisa untuk struktur edukatif, tetapi tidak boleh memberi dosis/diagnosis/klaim medis tanpa sumber dan review profesional.", "Apakah boleh membuat DOI sendiri? Tidak. DOI, jurnal, guideline, data, dan angka tidak boleh dikarang."],
+      tags: ["evidence handbook", "research vault", "source verification", "claim checker", "reference guide"],
     },
     CUSTOM: {
       title: `${seller.brand} — Custom Prompt Pack untuk ${seller.niche}`,
