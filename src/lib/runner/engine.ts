@@ -1,4 +1,4 @@
-// Deterministic mock engine v3.4.4 — canonical local robustness patch.
+// Deterministic mock engine v3.4.6 — canonical local robustness patch.
 // Adapter-specific PromptBook/Sample/Listing + QC/Manifest sync.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
@@ -92,7 +92,7 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
   if (/(image|gambar|ilustrasi|midjourney|sdxl|flux)/.test(n)) return "TEXT_TO_IMAGE";
   if (/(edit foto|retouch|photoshop|edit gambar)/.test(n)) return "IMAGE_EDITING";
   if (/(video|reel|tiktok|runway|sora|veo)/.test(n)) return "TEXT_TO_VIDEO";
-  if (/(akademik|skripsi|tesis|jurnal|paper)/.test(n)) return "ACADEMIC_WRITING";
+  if (/(academic|akademik|writing|penulisan|skripsi|tesis|jurnal|paper|laporan kasus|case report|case reflection|keperawatan|medis|medical|clinical|klinis|ners|evidence[-\s]?based)/.test(n)) return "ACADEMIC_WRITING";
   if (/(riset|research|literatur)/.test(n)) return "RESEARCH";
   if (/(konten|caption|copywriting|sosial media|content)/.test(n)) return "CONTENT_CREATION";
   if (/(bisnis|marketing|sales|funnel|brand)/.test(n)) return "BUSINESS_MARKETING";
