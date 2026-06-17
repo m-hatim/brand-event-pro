@@ -1,4 +1,4 @@
-// Deterministic mock engine v3.4.7 — canonical local robustness patch.
+// Deterministic mock engine v3.4.9 — canonical local robustness patch.
 // Adapter-specific PromptBook/Sample/Listing + QC/Manifest sync.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
 // Pure functions only. Browser-safe. No real AI, no marketplace API, no secrets.
@@ -72,6 +72,7 @@ export type ResolvedAdapter =
   | "CONTENT_CREATION"
   | "BUSINESS_MARKETING"
   | "EVIDENCE_HANDBOOK"
+  | "READY_TO_SELL_PRODUCT"
   | "CUSTOM";
 
 export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter {
@@ -86,6 +87,7 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
     "CONTENT_CREATION",
     "BUSINESS_MARKETING",
     "EVIDENCE_HANDBOOK",
+    "READY_TO_SELL_PRODUCT",
   ];
   if (selected && selected !== "CUSTOM" && known.includes(selected)) return selected as ResolvedAdapter;
 
@@ -94,6 +96,7 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
   if (/(image|gambar|ilustrasi|midjourney|sdxl|flux)/.test(n)) return "TEXT_TO_IMAGE";
   if (/(edit foto|retouch|photoshop|edit gambar)/.test(n)) return "IMAGE_EDITING";
   if (/(video|reel|tiktok|runway|sora|veo)/.test(n)) return "TEXT_TO_VIDEO";
+  if (/(ready[-\s]?to[-\s]?sell|siap jual|produk siap|productized|launch pack|cover|thumbnail|complete pdf|pdf product|gumroad product|marketplace asset|seller asset|sales asset|cta video|marketing video|product page asset|upload asset)/.test(n)) return "READY_TO_SELL_PRODUCT";
   if (/(handbook|vault|playbook|field guide|guidebook|reference pack|referensi kuat|evidence[-\s]?based handbook|supplement|suplemen|nutrition|nutrisi|fitness|health guide|claim checker|source log|evidence table)/.test(n)) return "EVIDENCE_HANDBOOK";
   if (/(academic|akademik|writing|penulisan|skripsi|tesis|jurnal|paper|laporan kasus|case report|case reflection|keperawatan|medis|medical|clinical|klinis|ners|evidence[-\s]?based)/.test(n)) return "ACADEMIC_WRITING";
   if (/(riset|research|literatur)/.test(n)) return "RESEARCH";
@@ -133,6 +136,7 @@ function adapterThemeAnchors(adapter: ResolvedAdapter): string[] {
     case "CONTENT_CREATION": return ["hook", "caption", "carousel", "script", "content pillar"];
     case "BUSINESS_MARKETING": return ["positioning", "USP", "funnel", "objection handling", "sales page"];
     case "EVIDENCE_HANDBOOK": return ["evidence table", "claim checker", "source verification", "safety disclaimer", "reference log", "handbook chapters"];
+    case "READY_TO_SELL_PRODUCT": return ["cover prompt", "complete PDF draft", "Gumroad listing", "CTA video prompt", "seller asset kit", "upload checklist"];
     default: return ["paket prompt rapi", "panduan pemakaian", "template digital", "seller review"];
   }
 }
@@ -625,6 +629,29 @@ const ADAPTER_CONFIGS: Record<Exclude<ResolvedAdapter, "CUSTOM">, AdapterConfig>
     checklist: ["Scope handbook jelas", "Evidence table ada", "Source log ada", "Claim strength diberi level", "Safety/limitation tertulis", "Tidak ada referensi palsu", "Manual verification required"],
     mistakes: ["Mengarang studi/DOI", "Memberi rekomendasi dosis/terapi tanpa sumber", "Menyamakan bukti lemah dengan fakta kuat", "Tidak menulis kontraindikasi/limitation", "Tidak membedakan claim dan evidence"],
   },
+
+  READY_TO_SELL_PRODUCT: {
+    topicTitles: [
+      "Product Audit & Positioning Extractor",
+      "Buyer Package Content Organizer",
+      "Complete PDF Product Builder Prompt",
+      "Cover Direction & Thumbnail Prompt",
+      "Gumroad/Shopee/Etsy Listing Builder",
+      "Marketing Video CTA Script Prompt",
+      "Bonus & Bundle Builder Prompt",
+      "FAQ & Delivery Instructions Builder",
+      "Marketplace Upload Asset QA Checklist",
+      "Final Sell-Ready Product Pack Checklist",
+    ],
+    contextRole: "productization strategist yang mengubah draft/ZIP produk digital menjadi paket siap jual dengan cover, PDF, listing, CTA, dan upload assets",
+    bestFor: "seller produk digital, creator Gumroad, Etsy seller, Shopee/Tokopedia seller, course/handbook/prompt pack creator",
+    outputType: "ready-to-sell-product-pack",
+    variables: ["product_files_summary", "buyer_profile", "product_promise", "cover_style", "pdf_structure", "marketplace", "cta_goal", "bonus_assets", "pricing_note"],
+    safety: "Tidak boleh mengklaim produk pasti laku, pasti viral, pasti income, atau marketplace-approved. Jika produk berisi kesehatan/finansial/hukum/akademik, semua klaim harus diverifikasi dan diberi disclaimer.",
+    expected: "Paket siap jual berisi audit produk, buyer-ready PDF structure, cover generation brief, listing assets, CTA/video prompt, delivery instructions, dan final upload QA.",
+    checklist: ["PDF product draft ada", "Cover prompt ada", "Marketplace assets ada", "Video CTA prompt opsional ada", "Delivery instruction jelas", "No overclaim", "Buyer/seller files terpisah"],
+    mistakes: ["Hanya membuat prompt pack tanpa cover/PDF", "Listing tidak siap paste", "Tidak ada delivery instructions", "Mengklaim produk pasti laku", "Tidak ada asset checklist"],
+  },
   CODING_AUTOMATION: {
     topicTitles: [],
     contextRole: "senior fullstack architect",
@@ -763,6 +790,7 @@ function adapterBuyerProblem(seller: ReturnType<typeof sellerMeta>, adapter: Res
     CONTENT_CREATION: "Creator sering membuat caption, hook, carousel, atau script yang generik, tidak konsisten dengan brand voice, dan terlalu bergantung pada klaim viral/FYP.",
     BUSINESS_MARKETING: "Seller sering punya offer yang menarik tetapi positioning, USP, sales page, funnel, email, dan objection handling masih tidak spesifik dan berisiko overclaim.",
     EVIDENCE_HANDBOOK: "Creator handbook/vault sering menyusun materi terlihat lengkap tetapi klaimnya tidak dipisahkan dari bukti, sumber belum diverifikasi, evidence level tidak jelas, dan risk/limitation sering hilang. Ini berbahaya terutama untuk topik kesehatan, suplemen, finansial, hukum, pendidikan, atau niche teknis.",
+    READY_TO_SELL_PRODUCT: "Seller sering punya file produk digital yang isinya sudah ada, tetapi belum siap dijual karena belum punya cover, PDF product draft, listing marketplace, CTA/video prompt, delivery instruction, asset checklist, dan final QA upload.",
     CODING_AUTOMATION: "Builder sering langsung coding tanpa PRD, user flow, schema, auth role, API planning, automation workflow, dan testing checklist yang rapi.",
     CUSTOM: "Buyer sering membutuhkan prompt pack niche yang rapi tetapi input awal masih terlalu umum, variabel belum jelas, output format belum dikunci, dan QA gate belum tersedia.",
   };
@@ -787,6 +815,7 @@ function adapterSolutionDetails(seller: ReturnType<typeof sellerMeta>, adapter: 
     CONTENT_CREATION: ["Hook, caption, carousel, short video script, calendar, storytelling angle, brand voice, repurposing, engagement prompt.", "No guaranteed viral/FYP/engagement guard.", "Content QA untuk brand consistency."],
     BUSINESS_MARKETING: ["Positioning, USP, sales page, funnel, email sequence, objection handling, pricing angle, campaign, lead magnet.", "No guaranteed sales/conversion/revenue guard.", "Ethical marketing checklist."],
     EVIDENCE_HANDBOOK: ["Evidence-based handbook/vault builder untuk topik apa pun: suplemen, riset, pendidikan, productivity, market guide, atau domain expert reference.", "Evidence Table, Source Verification Log, Claim Strength Grading, Risk/Contraindication/Limitation, Myth vs Evidence, FAQ, dan Update Log.", "No fake source/DOI/data guard; semua klaim wajib diberi status sumber dan batasan sebelum dipakai/dijual."],
+    READY_TO_SELL_PRODUCT: ["Productization workflow untuk mengubah file/draft/ZIP menjadi paket siap upload manual.", "Cover Generation Brief, Marketing Video CTA Prompt, Complete PDF Product Draft, Marketplace Upload Asset Kit, dan final sell-ready checklist.", "No overclaim guard: tidak ada jaminan sales, traffic, approval, income, atau klaim sensitif tanpa verifikasi."],
     CODING_AUTOMATION: ["PRD, requirement interview, user flow, database schema, auth/role, frontend pages, backend/API logic, automation, testing/deployment.", "No secrets and security review guard.", "MVP scope control."],
     CUSTOM: ["Prompt system niche dengan variables, output format, example input, QA checklist, dan safe use note.", "Custom mode inference untuk formula pack, corporate prompts, seller OS, atau productivity planner.", "Manual review and no overclaim guard."],
   };
@@ -1171,6 +1200,25 @@ function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: Resol
       "**Example AI Output:**",
       "```\nStatus: HOLD. Klaim tidak boleh ditulis sebagai fakta kuat karena sumber belum diberikan. Output aman: 'Klaim ini memerlukan verifikasi dari sumber ilmiah yang relevan. Tambahkan sumber asli sebelum menyatakan manfaat.'\nAction Required: minta sumber, cek tahun, penulis, jurnal/penerbit, DOI/URL asli jika ada, dan batasan studi.\n```",
     ],
+    READY_TO_SELL_PRODUCT: [
+      "## Sample 1: Product ZIP to Sell-Ready Pack",
+      "**Sample User Input:**",
+      "```\nproduct_files_summary: PromptBook.md, PromptLibrary.csv, UsageGuide.md; marketplace: Gumroad + Shopee; product promise: membantu seller membuat prompt pack rapi; cover_style: premium dark editorial; cta_goal: soft launch\n```",
+      "**Example AI Output:**",
+      "```\nSell-Ready Asset Plan: 1) Buyer PDF draft memakai cover + table of contents + PromptBook + sample output + license. 2) Cover prompt dibuat 4:3 Gumroad dan 4:5 marketplace. 3) Listing berisi problem-solution-what-you-get-FAQ tanpa klaim sales. 4) CTA video 15 detik memakai product mockup + soft CTA. 5) Delivery ZIP berisi PDF, CSV, usage guide, license.\n```",
+      "",
+      "## Sample 2: Complete PDF Product Builder",
+      "**Sample User Input:**",
+      "```\npdf_structure: cover, table of contents, how to use, prompt library, sample output, checklist, license; buyer_level: beginner; output: PDF source draft\n```",
+      "**Example AI Output:**",
+      "```\nPDF Draft Structure: Cover page → Buyer promise → Quick Start → PromptBook sections → Sample Input/Output → QA Checklist → FAQ → License/Disclaimer → Final Review Checklist. Add page numbers, section dividers, and export high-quality PDF.\n```",
+      "",
+      "## Sample 3: Marketing Video CTA Prompt",
+      "**Sample User Input:**",
+      "```\nduration: 15s; platform: Gumroad preview/Reels; CTA: preview the pack; forbidden: no guaranteed sales\n```",
+      "**Example AI Output:**",
+      "```\n0–3s: show messy files becoming organized. 3–7s: show cover + PDF + CSV preview. 7–12s: show buyer workflow. 12–15s: soft CTA: Preview the pack and see if it fits your workflow. No income/sales guarantee.\n```",
+    ],
     CUSTOM: [
       "## Sample 1: Custom Prompt System",
       "**Sample User Input:**",
@@ -1343,6 +1391,260 @@ function thumbnailBrief(seller: ReturnType<typeof sellerMeta>, adapter: Resolved
     "",
     "## Lynk.id Cover Idea",
     "Gunakan hero cover seperti sales page: problem → solution → file bundle. Tambahkan CTA singkat tanpa klaim berlebihan.",
+  ].join("\n");
+}
+
+function coverGenerationBrief(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  const isEvidence = adapter === "EVIDENCE_HANDBOOK" || /suplemen|supplement|health|kesehatan|medical|medis|clinical|klinis|finance|financial|hukum|legal/i.test(seller.niche);
+  return [
+    `# Cover Generation Brief — ${seller.brand}`,
+    "",
+    "## Purpose",
+    "File ini membuat produk lebih siap jual: cover/thumbnail bisa langsung digenerate di tool image AI atau dibuat ulang di Canva/Figma.",
+    "",
+    "## Cover Positioning",
+    `- Product: ${seller.brand} — ${seller.niche}`,
+    `- Target Audience: ${seller.audience}`,
+    `- Tone: ${seller.tone}`,
+    `- Marketplace Target: Gumroad, Shopee/Tokopedia, Lynk.id, Etsy/Payhip/Lemon Squeezy sesuai pilihan seller`,
+    "",
+    "## Main Cover Text",
+    `${seller.brand}`,
+    "",
+    "## Subtitle Options",
+    mdList([
+      `${seller.niche} — Ready-to-use digital product pack`,
+      "PromptBook + Sample + Checklist + Marketplace Assets",
+      adapter === "EVIDENCE_HANDBOOK" ? "Evidence table + source verification + claim safety workflow" : "Complete PDF draft + cover prompt + upload checklist",
+    ]),
+    "",
+    "## Gumroad / Marketplace Cover Prompt",
+    "```",
+    `Create a premium digital product cover for "${seller.brand}" about "${seller.niche}". Style: modern premium, clean editorial layout, high contrast typography, subtle 3D ebook/handbook mockup, professional marketplace thumbnail, strong readable title, ${seller.tone.toLowerCase()} tone, dark/navy background with clean accent gradient, minimal icons related to the topic, no brand logos, no platform logos, no exaggerated claims. Include empty-safe margins for marketplace crop. Commercial digital product cover, Gumroad-ready, high-resolution, 4:3 cover composition.`,
+    "```",
+    "",
+    "## Negative Prompt",
+    "```",
+    "blurry, low resolution, unreadable text, distorted typography, fake logos, official marketplace badge, guaranteed income claim, exaggerated medical claim, cluttered layout, messy mockup, watermark, typo, random text, illegible letters",
+    "```",
+    "",
+    "## Canva/Figma Layout Direction",
+    mdList([
+      "Canvas: 1600×1200 px for Gumroad/discovery preview; export PNG high quality.",
+      "Main title must be readable at small size.",
+      "Use 1 hero mockup: ebook, PDF stack, dashboard card, or handbook mockup.",
+      "Use max 3 benefit bullets on cover.",
+      "Avoid official logos unless you own or have permission.",
+      "Add a small badge: Manual Upload Draft / Digital Product Pack / Evidence-Safe Workflow depending on niche.",
+    ]),
+    "",
+    "## Marketplace Thumbnail Variants",
+    "### Gumroad / Payhip / Lemon Squeezy",
+    "Wide premium cover, large title, mockup, concise subtitle, visible at search result size.",
+    "",
+    "### Shopee / Tokopedia",
+    "Square or 4:5 crop-safe version, less text, high contrast, title + 2 benefits only.",
+    "",
+    "### Etsy",
+    "Cleaner mockup, more white space, product bundle preview, fewer claims.",
+    "",
+    ...(isEvidence ? [
+      "## Sensitive Topic Safety Overlay",
+      "For health/finance/legal/academic evidence products, do NOT put dosage, cure, diagnosis, income, legal guarantee, or strong outcome claims on the cover. Use safer wording such as: 'Evidence workflow', 'source verification', 'claim checker', or 'educational reference framework'.",
+      "",
+    ] : []),
+    "## Final Cover QA",
+    mdList([
+      "Title readable at 25% zoom.",
+      "No forbidden claim.",
+      "No fake official badge.",
+      "No platform logo misuse.",
+      "Cover matches actual product contents.",
+      "Export PNG/JPG and store in seller-marketplace-pack/assets/ when ready.",
+    ]),
+  ].join("\n");
+}
+
+function marketingVideoCtaPrompt(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  return [
+    `# Marketing Video CTA Prompt — ${seller.brand}`,
+    "",
+    "## Purpose",
+    "File ini opsional. Gunakan untuk membuat video CTA/marketing seperti Gumroad preview, TikTok/Reels, Shorts, atau marketplace teaser. Ini prompt/script, bukan file video jadi.",
+    "",
+    "## 15-Second Product Teaser Prompt",
+    "```",
+    `Create a 15-second marketing video concept for a digital product named "${seller.brand}" in the niche "${seller.niche}". Audience: ${seller.audience}. Tone: ${seller.tone}. Structure: 0-3s problem hook, 3-7s show product contents, 7-12s show benefits without overclaiming, 12-15s soft CTA. Visual style: premium digital product mockup, scrolling PDF pages, checklist cards, prompt library CSV preview, marketplace-ready cover. CTA: "Preview the pack and decide if it fits your workflow." Do not claim guaranteed income, guaranteed results, guaranteed approval, medical cure, or fake credentials.`,
+    "```",
+    "",
+    "## Scene Breakdown",
+    mdList([
+      "0–3s Hook: show the painful before-state related to the niche.",
+      "3–7s Product Reveal: show PDF cover, PromptBook, CSV, sample output, checklist.",
+      "7–12s Practical Benefit: show how buyer uses the pack step-by-step.",
+      "12–15s CTA: soft CTA with product mockup and marketplace page preview.",
+    ]),
+    "",
+    "## Voiceover Script Option",
+    "```",
+    `Kalau kamu punya ide produk digital tapi masih mentah, ${seller.brand} membantu merapikan isi, cover direction, prompt library, sample output, dan checklist upload manual. Ini bukan jaminan hasil — ini workflow siap review agar produkmu lebih rapi sebelum dipublish.`,
+    "```",
+    "",
+    "## Text Overlay Options",
+    mdList([
+      "Turn messy ideas into a structured digital product pack",
+      "PromptBook + CSV + Sample Output + Upload Checklist",
+      "Manual upload only — seller review required",
+      "Preview the pack before publishing",
+    ]),
+    "",
+    "## Negative / Forbidden Claims",
+    mdList([
+      "Do not say: guaranteed sales, guaranteed viral, guaranteed income, guaranteed approved.",
+      "Do not say: cures, treats, diagnoses, legal/financial guarantee, fake DOI/source.",
+      "Do not use official marketplace logos unless permitted.",
+    ]),
+    "",
+    "## Output Format for AI Video Tools",
+    "Use this as source prompt for Runway/Sora/Veo/Pika or as brief for manual editing. Add your own product screenshots after reviewing all content.",
+  ].join("\n");
+}
+
+function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
+  const isEvidence = adapter === "EVIDENCE_HANDBOOK";
+  return [
+    `# Complete PDF Product Draft — ${seller.brand}`,
+    "",
+    "## Important",
+    "Ini adalah draft sumber PDF yang bisa dirender manual ke PDF menggunakan Google Docs, Canva, Notion, Affinity Publisher, Word, atau Markdown-to-PDF. Aplikasi belum membuat binary PDF otomatis; file ini membuat struktur PDF siap desain dan ekspor.",
+    "",
+    "## Cover Page",
+    `# ${seller.brand}`,
+    `## ${seller.niche}`,
+    `For: ${seller.audience}`,
+    `License: ${seller.license}`,
+    "Manual Upload Only • Seller Review Required",
+    "",
+    "## Buyer Promise",
+    seller.confirmed_product_description,
+    "",
+    "## Table of Contents",
+    mdList([
+      "1. How to Use This Product",
+      "2. Product Scope & Safety Notes",
+      "3. PromptBook / Framework Library",
+      "4. Sample Input & Output",
+      "5. Quality Checklist",
+      "6. Marketplace/Delivery Notes",
+      isEvidence ? "7. Evidence Table & Source Verification Workflow" : "7. Ready-to-Sell Asset Workflow",
+      "8. FAQ & License",
+      "9. Final Review Checklist",
+    ]),
+    "",
+    "## 1. How to Use This Product",
+    mdList([
+      "Read the Product Brief first.",
+      "Open PromptBook and choose the prompt that matches your goal.",
+      "Fill variables using your real context.",
+      "Run the prompt in your AI tool of choice.",
+      "Review output using the Quality Checklist.",
+      "Never publish unverified claims, citations, pricing promises, or marketplace approval claims.",
+    ]),
+    "",
+    "## 2. Product Scope & Safety Notes",
+    `This product helps users structure ${seller.niche}. It does not guarantee sales, marketplace approval, legal compliance, academic acceptance, medical outcomes, or business performance.`,
+    "",
+    ...(isEvidence ? [
+      "## Evidence-Based Product Guard",
+      "All claims must be separated into: claim, source, evidence level, limitation, safety note, and verification status. If a source is missing, write [SOURCE NEEDED]. If a citation is not checked, write [VERIFY ORIGINAL]. Do not invent DOI, author, year, guideline, dosage, or data.",
+      "",
+    ] : []),
+    "## 3. PromptBook / Framework Library",
+    "Insert content from `02_PromptBook.md` here after final review.",
+    "",
+    "## 4. Sample Input & Output",
+    "Insert content from `05_Sample_Input_Output.md` here. Keep examples concrete and clearly labeled as examples.",
+    "",
+    "## 5. Quality Checklist",
+    "Insert content from `06_QualityChecklist.md` here and use it before publishing.",
+    "",
+    "## 6. Marketplace/Delivery Notes",
+    `Target marketplaces: ${marketplaces.join(", ") || "selected marketplaces"}. Upload is manual. Seller must review each marketplace policy before publishing.`,
+    "",
+    "## 7. Ready-to-Sell Asset Workflow",
+    mdList([
+      "Generate or design cover using `14_Cover_Generation_Brief.md`.",
+      "Prepare optional CTA/marketing video using `15_Marketing_Video_CTA_Prompt.md`.",
+      "Copy marketplace page assets from `21_Marketplace_Upload_Asset_Kit.md`.",
+      "Export final buyer PDF as PDF/A or high-quality PDF.",
+      "Package buyer PDF + CSV + license into Buyer ZIP.",
+    ]),
+    "",
+    "## 8. FAQ & License",
+    "Insert buyer FAQ and license/disclaimer. Make sure resell-as-is restrictions are clear.",
+    "",
+    "## 9. Final Review Checklist",
+    mdList([
+      "Cover readable at thumbnail size.",
+      "PDF has page numbers and table of contents.",
+      "No placeholder text remains.",
+      "No fake citations/claims/data.",
+      "License and disclaimer included.",
+      "Buyer ZIP opens successfully.",
+      "Marketplace listing has no overclaim.",
+    ]),
+  ].join("\n");
+}
+
+function marketplaceUploadAssetKit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
+  return [
+    `# Marketplace Upload Asset Kit — ${seller.brand}`,
+    "",
+    "## Purpose",
+    "Copy-ready asset draft untuk upload manual ke Gumroad, Shopee, Tokopedia, Etsy, Payhip, Lemon Squeezy, Lynk.id, atau marketplace lain. Review ulang sebelum publish.",
+    "",
+    "## Product Title Options",
+    mdList([
+      `${seller.brand} — ${seller.niche}`,
+      `${seller.niche} Digital Product Pack`,
+      `${seller.brand}: PromptBook + PDF Draft + Marketplace Assets`,
+    ]),
+    "",
+    "## Short Description",
+    `${seller.brand} membantu ${seller.audience} menyusun ${seller.niche} secara lebih terstruktur dengan PromptBook, Sample Input/Output, Quality Checklist, cover prompt, complete PDF draft, dan marketplace upload guide.`,
+    "",
+    "## Long Description Structure",
+    mdList([
+      "Problem: jelaskan masalah buyer tanpa menakut-nakuti berlebihan.",
+      "Solution: jelaskan isi paket dan workflow.",
+      "What You Get: file-file dalam Buyer ZIP.",
+      "How to Use: 3–5 langkah singkat.",
+      "Who It Is For / Not For.",
+      "License and Disclaimer.",
+      "Manual upload/delivery note.",
+    ]),
+    "",
+    "## Bullet Benefits",
+    mdList([
+      "PromptBook structured for practical use",
+      "CSV prompt library for quick browsing",
+      "Concrete sample input/output",
+      "Complete PDF product draft source",
+      "Cover generation brief",
+      "Marketplace listing drafts",
+      "Quality and safety checklist",
+    ]),
+    "",
+    "## Tag Ideas",
+    mdList(["prompt pack", "digital product", "AI prompts", "template", "Gumroad", "seller tools", seller.niche.toLowerCase()].filter(Boolean)),
+    "",
+    "## Pricing Note",
+    `Suggested price should be tested manually. Current target price: ${seller.target_price || "use 10_Pricing_Recommendation.md"}. Do not claim guaranteed ROI or sales.`,
+    "",
+    "## Upload Checklist per Marketplace",
+    ...((marketplaces.length ? marketplaces : ["Gumroad", "Shopee", "Tokopedia", "Etsy"]).map((mp) => `### ${mp}\n- [ ] Cover uploaded.\n- [ ] Buyer ZIP or delivery link tested.\n- [ ] Description pasted and reviewed.\n- [ ] Tags/categories selected.\n- [ ] License/disclaimer included.\n- [ ] No forbidden claims.\n`)),
+    "## Final Policy Reminder",
+    "This app does not publish automatically. Seller must manually upload, review marketplace policies, and verify claims before publishing.",
   ].join("\n");
 }
 
@@ -1519,7 +1821,17 @@ function marketplaceListing(fileName: string, seller: ReturnType<typeof sellerMe
       faq: ["Apakah menjamin penjualan? Tidak.", "Apakah ini strategi final? Ini draft yang perlu review dan testing.", "Apakah boleh untuk client? Sesuai lisensi dan review manual."],
       tags: ["marketing prompt", "sales page", "funnel", "email sequence"],
     },
-    CODING_AUTOMATION: {
+  
+    READY_TO_SELL_PRODUCT: {
+      title: `${seller.brand} — Ready-to-Sell Product Pack untuk ${seller.niche}`,
+      hook: "Ubah draft/ZIP produk digital menjadi paket siap upload: cover prompt, PDF product draft, listing, CTA video prompt, delivery instructions, dan upload asset kit.",
+      description: `Paket ini membantu seller menyiapkan ${seller.niche} menjadi produk digital yang lebih siap dijual di Gumroad, Shopee, Tokopedia, Etsy, Payhip, Lynk.id, atau marketplace lain. Output tetap manual upload, bukan auto-publish, dan semua klaim harus direview sebelum publish.`,
+      benefits: ["Cover generation brief", "Complete PDF product draft", "Marketplace product page assets", "Marketing video CTA prompts", "Buyer delivery instructions", "Seller upload checklist", "No overclaim guard"],
+      faq: ["Apakah ini membuat cover/PDF otomatis di aplikasi? Tidak, app membuat brief/prompt dan PDF source draft siap dirender manual.", "Apakah listing siap paste? Draft listing disediakan, tetapi seller wajib review kebijakan marketplace.", "Apakah menjamin penjualan? Tidak, tidak ada jaminan sales, conversion, atau traffic."],
+      tags: ["ready to sell", "Gumroad product", "digital product pack", "cover prompt", "PDF product"],
+    },
+
+  CODING_AUTOMATION: {
       title: `${seller.brand} — ${seller.prompt_count} Fullstack Coding & Automation Prompts`,
       hook: "Ubah ide web app menjadi PRD, user flow, database schema, auth, API plan, automation workflow, testing, dan deployment checklist.",
       description: `Paket ini membantu developer/founder menyusun blueprint teknis React/Supabase/fullstack secara lebih rapi. Ini bukan software auto-build dan tidak menyertakan API marketplace.`,
@@ -1628,6 +1940,10 @@ export function generateModuleContent(args: {
     case "09_Buyer_FAQ.md": content = buyerFAQ(seller); break;
     case "10_Pricing_Recommendation.md": content = pricingRecommendation(seller); break;
     case "11_Thumbnail_Brief.md": content = thumbnailBrief(seller, adapter); break;
+    case "14_Cover_Generation_Brief.md": content = coverGenerationBrief(seller, adapter); break;
+    case "15_Marketing_Video_CTA_Prompt.md": content = marketingVideoCtaPrompt(seller, adapter); break;
+    case "20_Complete_PDF_Product_Draft.md": content = completePdfProductDraft(seller, adapter, args.marketplaces); break;
+    case "21_Marketplace_Upload_Asset_Kit.md": content = marketplaceUploadAssetKit(seller, adapter, args.marketplaces); break;
     case "12_Product_Manifest.json": content = productManifestJson(seller, adapter, args.marketplaces); break;
     case "13_Ready_to_Upload_Checklist.md": content = readyToUploadChecklist(seller); break;
     case "99_Assumption_Register.md": content = assumptionRegister(seller, adapter, args.marketplaces); break;
