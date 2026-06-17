@@ -23,7 +23,7 @@ type DraftShape = {
   form: {
     brand: string; language: string; target_market: string;
     niche: string; audience: string; description: string;
-    prompt_count: number; tone: string; license: string; target_price: string;
+    prompt_count: number; tone: string; custom_tone: string; license: string; target_price: string;
   };
   marketplaces: string[];
   anchorsText: string;
@@ -38,7 +38,7 @@ const DEFAULT_DRAFT: DraftShape = {
   form: {
     brand: "", language: "Indonesia", target_market: "Indonesia",
     niche: "", audience: "", description: "",
-    prompt_count: 10, tone: "Friendly", license: "Personal & Commercial", target_price: "",
+    prompt_count: 10, tone: "Friendly", custom_tone: "", license: "Personal & Commercial", target_price: "",
   },
   marketplaces: [],
   anchorsText: "",
@@ -105,7 +105,7 @@ export default function NewRun() {
     return generateKeyAnchors({
       niche: form.niche, audience: form.audience,
       confirmedDescription: confirmedDesc ?? form.description ?? "",
-      marketplaces, tone: form.tone, adapter: adapter as string,
+      marketplaces, tone: effectiveTone || form.tone, adapter: adapter as string,
     });
   }
   function handleAutoAnchors() {
@@ -116,6 +116,8 @@ export default function NewRun() {
 
   const currentAnchors = anchorsText.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   const anchorsOk = currentAnchors.length >= 3 || (form.niche.trim() && form.audience.trim() && form.description.trim());
+  const isCustomTone = form.tone === "Custom";
+  const effectiveTone = isCustomTone ? form.custom_tone.trim() : form.tone;
 
   const checklist = [
     { label: "Jenis produk dipilih", ok: !!adapter },
@@ -125,6 +127,7 @@ export default function NewRun() {
     { label: "Deskripsi sudah dikonfirmasi", ok: !!confirmedDesc },
     { label: "Minimal 3 kata kunci (atau dapat dibuat otomatis)", ok: !!anchorsOk },
     { label: "Minimal 1 marketplace dipilih", ok: marketplaces.length > 0 },
+    { label: "Tone custom terisi jika memilih Custom", ok: !isCustomTone || !!form.custom_tone.trim() },
   ];
   const canNextFromStep2 = checklist.every((c) => c.ok);
 
@@ -145,7 +148,7 @@ export default function NewRun() {
         audience: form.audience,
         description: form.description,
         prompt_count: form.prompt_count,
-        tone: form.tone,
+        tone: effectiveTone || form.tone,
         key_anchors: finalAnchors,
         license: form.license,
         target_price: form.target_price || undefined,
@@ -246,6 +249,18 @@ export default function NewRun() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{TONES.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                 </Select>
+                {form.tone === "Custom" && (
+                  <div className="mt-2">
+                    <Input
+                      value={form.custom_tone}
+                      onChange={(e) => update("custom_tone", e.target.value)}
+                      placeholder="Tulis tone custom. Contoh: akademik, hati-hati, evidence-based, profesional"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Wajib diisi. Nilai ini yang akan dikirim ke engine, bukan label “Custom”.
+                    </p>
+                  </div>
+                )}
               </div>
               <div><Label>Jumlah Prompt</Label>
                 <Select value={String(form.prompt_count)} onValueChange={(v) => update("prompt_count", Number(v))}>
@@ -385,7 +400,7 @@ export default function NewRun() {
             <div><b>Bahasa / Market:</b> {form.language} • {form.target_market}</div>
             <div><b>Niche:</b> {form.niche}</div>
             <div><b>Audiens:</b> {form.audience}</div>
-            <div><b>Tone / Jumlah Prompt / Lisensi:</b> {form.tone} • {form.prompt_count} • {form.license}</div>
+            <div><b>Tone / Jumlah Prompt / Lisensi:</b> {effectiveTone || form.tone} • {form.prompt_count} • {form.license}</div>
             {form.target_price && <div><b>Target Harga:</b> {form.target_price}</div>}
             <div><b>Marketplace:</b> {marketplaces.join(", ")}</div>
             <div>
