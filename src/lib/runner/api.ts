@@ -9,6 +9,9 @@ import {
   generateModuleContent,
   generateSyncedManifestContent,
   generateRunRequestId,
+  detectProductIntent,
+  generateProductStrategy,
+  calculateCommercialReadiness,
   runQC,
   safeMarketplaces,
   seedAssumptions,
@@ -359,6 +362,10 @@ async function runAndPersistQC(runId: string, bundleBefore: Bundle) {
     anchors: latest.seller.key_anchors ?? [],
     confirmedDescription: latest.seller.confirmed_product_description ?? "",
     marketplaces: latest.run.marketplaces ?? [],
+    adapter: latest.run.adapter,
+    niche: latest.seller.niche ?? "",
+    brand: latest.seller.brand ?? "",
+    audience: latest.seller.audience ?? "",
   });
 
   const seller = makeGenerationSeller(latest);
@@ -498,8 +505,41 @@ export async function approvePackage(runId: string) {
   const latest = await runAndPersistQC(runId, bundle);
   const refreshed = await getRunBundle(runId);
   const messages = approvalDiagnostics(refreshed);
-  if (messages.length || latest.qc.score < QC_THRESHOLDS.MIN_SELL_READY || latest.qc.blocking_errors > 0) {
-    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ") || "Periksa QC terlebih dahulu."}`);
+  const seller = refreshed.seller ?? bundle.seller;
+  const run = refreshed.run ?? bundle.run;
+  const intent = detectProductIntent({
+    productName: seller?.brand || "",
+    niche: seller?.niche || "",
+    targetAudience: seller?.audience || "",
+    description: seller?.confirmed_product_description || "",
+    selectedAdapter: run?.adapter || "CUSTOM",
+    promptCount: seller?.prompt_count || 10,
+  });
+  const strategy = generateProductStrategy({
+    productName: seller?.brand || "",
+    niche: seller?.niche || "",
+    audience: seller?.audience || "",
+    description: seller?.confirmed_product_description || "",
+    promptCount: seller?.prompt_count || 10,
+    license: seller?.license || "Personal & Commercial",
+    targetMarket: seller?.target_market || "Indonesia",
+  }, intent);
+  const commercial = calculateCommercialReadiness({
+    intent,
+    strategy,
+    modules: refreshed.modules,
+    marketplaces: refreshed.run?.marketplaces ?? [],
+  });
+  const qcPass = latest.qc.score >= QC_THRESHOLDS.PREMIUM_MIN && latest.qc.blocking_errors === 0;
+  const commercialPass = commercial.overall_commercial_score >= 85;
+  if (messages.length || !qcPass || !commercialPass) {
+    const reasons = [...messages];
+    if (!qcPass) reasons.push(`Technical QC ${latest.qc.score}/${QC_THRESHOLDS.PREMIUM_MIN} belum memenuhi premium gate.`);
+    if (!commercialPass) {
+      reasons.push(`Commercial readiness ${commercial.overall_commercial_score}/85 belum memenuhi gate.`);
+      reasons.push(...commercial.recommendations.slice(0, 3));
+    }
+    throw new Error(`Paket belum bisa PASS_FINAL. ${reasons.join(" ") || "Periksa QC dan Commercial Readiness."}`);
   }
   await supabase.from("runs").update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() }).eq("id", runId);
   await supabase.from("exports").insert({
@@ -509,6 +549,8 @@ export async function approvePackage(runId: string) {
       mode: "MANUAL_UPLOAD_ONLY",
       qc_score: latest.qc.score,
       qc_status: latest.qc.status,
+      commercial_score: commercial.overall_commercial_score,
+      commercial_level: commercial.readiness_level,
       files: refreshed.modules.map((m) => ({ file: m.file_name, key: m.module_key })),
       approved_at: new Date().toISOString(),
     },
