@@ -1,7 +1,6 @@
-// Client-side premium handbook PDF generator (jsPDF).
-// Renders markdown source (20_Complete_PDF_Product_Draft.md) into a styled
-// multi-page PDF: cover, H1 page breaks, body, footer page numbers.
-// No server, no secrets, no marketplace API.
+// src/lib/runner/pdf.ts
+// Buyer-facing premium PDF generator. No seller/internal wording.
+// Pure-ish: only uses jsPDF (browser). No secrets, no API.
 import jsPDF from "jspdf";
 
 export interface HandbookMeta {
@@ -11,121 +10,199 @@ export interface HandbookMeta {
   license: string;
   version?: string;
   releaseDate?: string;
+  language?: string; // "Indonesia" | "English" | "Bilingual"
 }
 
-const MARGIN_X = 56; // pt
-const TOP_Y = 64;
-const BOTTOM_Y = 760;
-const LINE_BODY = 16;
-const LINE_H1 = 28;
-const LINE_H2 = 22;
-const LINE_H3 = 18;
+// Words that must NEVER appear in any buyer-facing PDF text.
+const FORBIDDEN_PDF_TERMS: RegExp[] = [
+  /manual upload only/i,
+  /seller review required/i,
+  /premium product architecture v2/i,
+  /marketplace draft/i,
+  /seller toolkit/i,
+  /upload checklist/i,
+  /pricing heuristic/i,
+  /\bmanifest\b/i,
+  /approval enabled/i,
+  /blocking errors/i,
+  /PASS_FINAL/i,
+  /insert content from/i,
+  /06_QualityChecklist/i,
+  /07_License_Disclaimer/i,
+  /14_Cover_Generation_Brief/i,
+  /15_Marketing_Video_CTA/i,
+  /21_Marketplace_Upload_Asset_Kit/i,
+  /QC_Scorecard\.md/i,
+];
 
-function splitMarkdownIntoBlocks(md: string): Array<{ type: "h1" | "h2" | "h3" | "li" | "p" | "blank"; text: string }> {
-  const out: Array<{ type: "h1" | "h2" | "h3" | "li" | "p" | "blank"; text: string }> = [];
-  for (const raw of md.split(/\r?\n/)) {
-    const line = raw.replace(/\s+$/, "");
-    if (!line.trim()) { out.push({ type: "blank", text: "" }); continue; }
-    if (/^#\s+/.test(line)) { out.push({ type: "h1", text: line.replace(/^#\s+/, "") }); continue; }
-    if (/^##\s+/.test(line)) { out.push({ type: "h2", text: line.replace(/^##\s+/, "") }); continue; }
-    if (/^###\s+/.test(line)) { out.push({ type: "h3", text: line.replace(/^###\s+/, "") }); continue; }
-    if (/^[-*]\s+/.test(line)) { out.push({ type: "li", text: line.replace(/^[-*]\s+/, "") }); continue; }
-    out.push({ type: "p", text: line });
+function scrubLine(line: string): string {
+  let out = line;
+  for (const rx of FORBIDDEN_PDF_TERMS) out = out.replace(rx, "");
+  return out.replace(/\s{2,}/g, " ").replace(/^[\s•\-]+$/g, "").trimEnd();
+}
+
+function buyerFooterLabel(meta: HandbookMeta): string {
+  return `${meta.productName} — Buyer Playbook`;
+}
+
+type Block =
+  | { type: "h1"; text: string }
+  | { type: "h2"; text: string }
+  | { type: "li"; text: string }
+  | { type: "p"; text: string }
+  | { type: "code"; text: string }
+  | { type: "spacer" };
+
+function parseMarkdownToBlocks(md: string): Block[] {
+  const blocks: Block[] = [];
+  const lines = (md || "").split(/\r?\n/);
+  let inCode = false;
+  let codeBuf: string[] = [];
+  for (const raw of lines) {
+    const line = raw ?? "";
+    if (/^```/.test(line.trim())) {
+      if (inCode) {
+        blocks.push({ type: "code", text: codeBuf.join("\n") });
+        codeBuf = [];
+        inCode = false;
+      } else {
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeBuf.push(line);
+      continue;
+    }
+    const scrubbed = scrubLine(line);
+    if (!scrubbed.trim()) {
+      blocks.push({ type: "spacer" });
+      continue;
+    }
+    if (/^#\s+/.test(scrubbed)) blocks.push({ type: "h1", text: scrubbed.replace(/^#\s+/, "") });
+    else if (/^#{2,}\s+/.test(scrubbed)) blocks.push({ type: "h2", text: scrubbed.replace(/^#{2,}\s+/, "") });
+    else if (/^[-*]\s+/.test(scrubbed)) blocks.push({ type: "li", text: scrubbed.replace(/^[-*]\s+/, "").replace(/^\[\s?\]\s*/, "") });
+    else blocks.push({ type: "p", text: scrubbed.replace(/\*\*/g, "") });
   }
-  return out;
+  if (inCode && codeBuf.length) blocks.push({ type: "code", text: codeBuf.join("\n") });
+  return blocks;
 }
 
 export function generateProductHandbookPdf(markdown: string, meta: HandbookMeta): Blob {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const usableW = pageW - MARGIN_X * 2;
+  const marginX = 56;
+  const marginTop = 64;
+  const marginBottom = 56;
+  const contentW = pageW - marginX * 2;
+  let y = marginTop;
+  let pageNo = 1;
+  const footer = buyerFooterLabel(meta);
 
-  // --- Cover page ---
-  doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, pageW, pageH, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(36);
-  doc.text(meta.productName || "Premium Product Handbook", MARGIN_X, 220, { maxWidth: usableW });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(16);
-  doc.text(meta.niche || "", MARGIN_X, 280, { maxWidth: usableW });
-  doc.setFontSize(12);
-  doc.text(`For: ${meta.audience || ""}`, MARGIN_X, 320, { maxWidth: usableW });
-  doc.text(`License: ${meta.license || "Personal & Commercial"}`, MARGIN_X, 340);
-  doc.text(`Version: ${meta.version || "1.0"}  •  ${meta.releaseDate || new Date().toISOString().slice(0, 10)}`, MARGIN_X, 360);
-  doc.setFontSize(10);
-  doc.setTextColor(180, 200, 230);
-  doc.text("Manual Upload Only  •  Seller Review Required  •  Premium Product Architecture v2", MARGIN_X, pageH - 60);
-
-  // --- Body ---
-  doc.addPage();
-  doc.setTextColor(20, 20, 20);
-  let y = TOP_Y;
-  let pageNum = 2;
-
-  const ensureSpace = (need: number) => {
-    if (y + need > BOTTOM_Y) { doc.addPage(); y = TOP_Y; pageNum += 1; }
+  const drawFooter = () => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(footer, marginX, pageH - 28);
+    doc.text(`${pageNo}`, pageW - marginX, pageH - 28, { align: "right" });
+    doc.setTextColor(0);
   };
 
-  const blocks = splitMarkdownIntoBlocks(markdown);
+  const newPage = () => {
+    drawFooter();
+    doc.addPage();
+    pageNo += 1;
+    y = marginTop;
+  };
+
+  const ensure = (needed: number) => {
+    if (y + needed > pageH - marginBottom) newPage();
+  };
+
+  // ---------- Cover (buyer-safe) ----------
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, pageW, pageH, "F");
+  doc.setTextColor(255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(26);
+  const titleLines = doc.splitTextToSize(meta.productName, contentW);
+  doc.text(titleLines, marginX, 220);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(13);
+  doc.setTextColor(200);
+  doc.text("Buyer Playbook", marginX, 220 + titleLines.length * 30 + 18);
+  doc.setFontSize(11);
+  const sub = doc.splitTextToSize(meta.niche, contentW);
+  doc.text(sub, marginX, 220 + titleLines.length * 30 + 42);
+  doc.setFontSize(10);
+  doc.setTextColor(170);
+  const coverMeta = [
+    `For: ${meta.audience}`,
+    `License: ${meta.license}`,
+    "Research and Decision-Support Toolkit",
+    "Preliminary Due Diligence Support",
+    `Version ${meta.version || "1.0"} • ${meta.releaseDate || new Date().toISOString().slice(0, 10)}`,
+  ];
+  doc.text(coverMeta, marginX, pageH - 140);
+  doc.setTextColor(0);
+  newPage();
+
+  // ---------- Body ----------
+  const blocks = parseMarkdownToBlocks(markdown);
   for (const b of blocks) {
+    if (b.type === "spacer") { y += 6; continue; }
     if (b.type === "h1") {
-      // New page per H1 (except the very first H1 right after cover)
-      if (y > TOP_Y) { doc.addPage(); y = TOP_Y; pageNum += 1; }
+      ensure(40);
+      if (y > marginTop + 4) newPage();
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(22);
-      const lines = doc.splitTextToSize(b.text, usableW);
-      doc.text(lines, MARGIN_X, y);
-      y += LINE_H1 * lines.length;
-      doc.setDrawColor(15, 23, 42);
-      doc.setLineWidth(1.5);
-      doc.line(MARGIN_X, y - 8, MARGIN_X + 80, y - 8);
-      y += 12;
+      doc.setFontSize(18);
+      doc.setTextColor(17, 24, 39);
+      const lines = doc.splitTextToSize(b.text, contentW);
+      doc.text(lines, marginX, y);
+      y += lines.length * 22 + 8;
+      doc.setDrawColor(220);
+      doc.line(marginX, y, marginX + contentW, y);
+      y += 14;
+      doc.setTextColor(0);
     } else if (b.type === "h2") {
-      ensureSpace(LINE_H2 + 6);
+      ensure(28);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(15);
-      const lines = doc.splitTextToSize(b.text, usableW);
-      doc.text(lines, MARGIN_X, y);
-      y += LINE_H2 * lines.length + 4;
-    } else if (b.type === "h3") {
-      ensureSpace(LINE_H3);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      const lines = doc.splitTextToSize(b.text, usableW);
-      doc.text(lines, MARGIN_X, y);
-      y += LINE_H3 * lines.length + 2;
+      doc.setFontSize(13);
+      doc.setTextColor(31, 41, 55);
+      const lines = doc.splitTextToSize(b.text, contentW);
+      doc.text(lines, marginX, y);
+      y += lines.length * 17 + 6;
+      doc.setTextColor(0);
     } else if (b.type === "li") {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      const lines = doc.splitTextToSize(`• ${b.text}`, usableW - 12);
-      ensureSpace(LINE_BODY * lines.length);
-      doc.text(lines, MARGIN_X + 12, y);
-      y += LINE_BODY * lines.length;
-    } else if (b.type === "p") {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      const lines = doc.splitTextToSize(b.text, usableW);
-      ensureSpace(LINE_BODY * lines.length);
-      doc.text(lines, MARGIN_X, y);
-      y += LINE_BODY * lines.length;
+      doc.setFontSize(10.5);
+      const lines = doc.splitTextToSize(b.text, contentW - 16);
+      ensure(lines.length * 14 + 2);
+      doc.text("•", marginX, y);
+      doc.text(lines, marginX + 14, y);
+      y += lines.length * 14 + 3;
+    } else if (b.type === "code") {
+      doc.setFont("courier", "normal");
+      doc.setFontSize(9);
+      const lines = doc.splitTextToSize(b.text, contentW - 16);
+      ensure(lines.length * 12 + 12);
+      doc.setFillColor(243, 244, 246);
+      doc.rect(marginX, y - 10, contentW, lines.length * 12 + 14, "F");
+      doc.setTextColor(55);
+      doc.text(lines, marginX + 8, y);
+      y += lines.length * 12 + 12;
+      doc.setTextColor(0);
     } else {
-      y += 8;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.5);
+      const lines = doc.splitTextToSize(b.text, contentW);
+      ensure(lines.length * 14 + 4);
+      doc.text(lines, marginX, y);
+      y += lines.length * 14 + 6;
     }
   }
-
-  // --- Footer page numbers on every page except cover ---
-  const total = doc.getNumberOfPages();
-  for (let p = 2; p <= total; p++) {
-    doc.setPage(p);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(120, 120, 120);
-    doc.text(`${meta.productName} — Premium Product Handbook`, MARGIN_X, pageH - 28);
-    doc.text(`${p - 1} / ${total - 1}`, pageW - MARGIN_X, pageH - 28, { align: "right" });
-  }
+  drawFooter();
 
   return doc.output("blob");
 }
