@@ -722,6 +722,7 @@ export function buildPromptLibrary(adapter: ResolvedAdapter, niche: string, coun
   }
   const titles = adapter === "CUSTOM" ? CUSTOM_LIBRARIES[customMode(niche)] : ADAPTER_CONFIGS[adapter].topicTitles;
   const config = adapter === "CUSTOM" ? {
+    topicTitles: titles as unknown as string[],
     contextRole: "prompt product architect untuk custom prompt product yang sangat spesifik terhadap niche",
     bestFor: "seller produk prompt digital, creator, dan tim internal",
     outputType: "custom-prompt-system",

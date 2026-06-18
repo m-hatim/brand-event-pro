@@ -39,7 +39,6 @@ export async function buildBuyerZip(input: BuildExportInput): Promise<Blob> {
   const root = zip.folder("premium-product-system_v1.0")!;
   const buyer = root.folder("BUYER_PACKAGE")!;
   for (const file of FINAL_BUYER_MODULES) {
-    if (file === "Product_Handbook.pdf") continue;
     const c = findContent(input.modules, file);
     if (c) buyer.file(file, c);
   }
@@ -70,7 +69,6 @@ export async function buildFullSystemZip(input: BuildExportInput): Promise<Blob>
   const seller = root.folder("SELLER_TOOLKIT")!;
   const admin = root.folder("ADMIN_MANIFEST")!;
   for (const file of FINAL_BUYER_MODULES) {
-    if (file === "Product_Handbook.pdf") continue;
     const c = findContent(input.modules, file);
     if (c) buyer.file(file, c);
   }
