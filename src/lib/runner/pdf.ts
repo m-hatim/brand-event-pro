@@ -17,28 +17,55 @@ export interface HandbookMeta {
 const FORBIDDEN_PDF_TERMS: RegExp[] = [
   /manual upload only/i,
   /seller review required/i,
+  /seller-reviewed/i,
   /premium product architecture v2/i,
+  /PREMIUM_PRODUCT_ARCHITECTURE_V2/g,
   /marketplace draft/i,
   /seller toolkit/i,
+  /seller master toolkit/i,
   /upload checklist/i,
   /pricing heuristic/i,
-  /\bmanifest\b/i,
+  /pricing recommendation/i,
+  /thumbnail brief/i,
+  /cover generation brief/i,
+  /cover generation/i,
   /approval enabled/i,
-  /blocking errors/i,
-  /PASS_FINAL/i,
+  /blocking[_ ]errors/i,
+  /PASS_FINAL/g,
   /insert content from/i,
-  /06_QualityChecklist/i,
-  /07_License_Disclaimer/i,
-  /14_Cover_Generation_Brief/i,
-  /15_Marketing_Video_CTA/i,
-  /21_Marketplace_Upload_Asset_Kit/i,
-  /QC_Scorecard\.md/i,
+  /06_QualityChecklist/gi,
+  /07_License_Disclaimer/gi,
+  /08_ManualUploadGuide/gi,
+  /10_Pricing_Recommendation/gi,
+  /11_Thumbnail_Brief/gi,
+  /13_Ready_to_Upload_Checklist/gi,
+  /14_Cover_Generation_Brief/gi,
+  /15_Marketing_Video_CTA/gi,
+  /21_Marketplace_Upload_Asset_Kit/gi,
+  /99_Assumption_Register/gi,
+  /QC_Scorecard\.md/gi,
+  /00_Seller_Master_Toolkit/gi,
+  /12_Product_Manifest/gi,
+  /diunggah manual oleh seller/i,
+  /draft ini harus direview/i,
+  /tidak ada api marketplace/i,
+  /no marketplace api/i,
+  /no auto-publish/i,
+  /seller wajib/i,
+  /upload manual saja/i,
 ];
 
 function scrubLine(line: string): string {
-  let out = line;
-  for (const rx of FORBIDDEN_PDF_TERMS) out = out.replace(rx, "");
-  return out.replace(/\s{2,}/g, " ").replace(/^[\s•\-]+$/g, "").trimEnd();
+  let out = line || "";
+  for (const rx of FORBIDDEN_PDF_TERMS) {
+    rx.lastIndex = 0;
+    out = out.replace(rx, "");
+  }
+  for (const rx of FORBIDDEN_PDF_TERMS) {
+    rx.lastIndex = 0;
+    out = out.replace(rx, "");
+  }
+  return out.replace(/\s{2,}/g, " ").replace(/^[\s•\-–—]+$/g, "").trimEnd();
 }
 
 function buyerFooterLabel(meta: HandbookMeta): string {
@@ -62,7 +89,7 @@ function parseMarkdownToBlocks(md: string): Block[] {
     const line = raw ?? "";
     if (/^```/.test(line.trim())) {
       if (inCode) {
-        blocks.push({ type: "code", text: codeBuf.join("\n") });
+        blocks.push({ type: "code", text: scrubLine(codeBuf.join("\n")) });
         codeBuf = [];
         inCode = false;
       } else {
@@ -84,7 +111,7 @@ function parseMarkdownToBlocks(md: string): Block[] {
     else if (/^[-*]\s+/.test(scrubbed)) blocks.push({ type: "li", text: scrubbed.replace(/^[-*]\s+/, "").replace(/^\[\s?\]\s*/, "") });
     else blocks.push({ type: "p", text: scrubbed.replace(/\*\*/g, "") });
   }
-  if (inCode && codeBuf.length) blocks.push({ type: "code", text: codeBuf.join("\n") });
+  if (inCode && codeBuf.length) blocks.push({ type: "code", text: scrubLine(codeBuf.join("\n")) });
   return blocks;
 }
 
