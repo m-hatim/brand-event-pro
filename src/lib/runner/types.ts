@@ -341,6 +341,7 @@ export type ProductIntentId =
   | "RESEARCH_SYSTEM"
   | "ACADEMIC_WRITING_SYSTEM"
   | "BUSINESS_MARKETING_SYSTEM"
+  | "DUE_DILIGENCE_SYSTEM"
   | "GENERAL_PROMPT_PACK";
 
 export interface ProductIntent {
