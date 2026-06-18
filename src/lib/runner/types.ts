@@ -84,21 +84,12 @@ export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
   { key: "03_PromptLibrary", file: "03_PromptLibrary.csv", chunks: 1, category: "core" },
   { key: "04_UsageGuide", file: "04_UsageGuide.md", chunks: 1, category: "core" },
   { key: "05_Sample_Input_Output", file: "05_Sample_Input_Output.md", chunks: 1, category: "core" },
-  { key: "06_QualityChecklist", file: "06_QualityChecklist.md", chunks: 1, category: "core" },
-  { key: "07_License_Disclaimer", file: "07_License_Disclaimer.md", chunks: 1, category: "core" },
-  { key: "08_ManualUploadGuide", file: "08_ManualUploadGuide.md", chunks: 1, category: "core" },
   { key: "09_Buyer_FAQ", file: "09_Buyer_FAQ.md", chunks: 1, category: "core" },
-  { key: "10_Pricing_Recommendation", file: "10_Pricing_Recommendation.md", chunks: 1, category: "core" },
-  { key: "11_Thumbnail_Brief", file: "11_Thumbnail_Brief.md", chunks: 1, category: "core" },
-  { key: "14_Cover_Generation_Brief", file: "14_Cover_Generation_Brief.md", chunks: 1, category: "core" },
-  { key: "15_Marketing_Video_CTA_Prompt", file: "15_Marketing_Video_CTA_Prompt.md", chunks: 1, category: "core" },
   { key: "20_Complete_PDF_Product_Draft", file: "20_Complete_PDF_Product_Draft.md", chunks: 1, category: "core" },
-  { key: "21_Marketplace_Upload_Asset_Kit", file: "21_Marketplace_Upload_Asset_Kit.md", chunks: 1, category: "core" },
-  { key: "12_Product_Manifest", file: "12_Product_Manifest.json", chunks: 1, category: "core" },
-  { key: "13_Ready_to_Upload_Checklist", file: "13_Ready_to_Upload_Checklist.md", chunks: 1, category: "core" },
-  { key: "99_Assumption_Register", file: "99_Assumption_Register.md", chunks: 1, category: "core" },
   { key: "QC_Scorecard", file: "QC_Scorecard.md", chunks: 1, category: "qc" },
   { key: "00_Seller_Master_Toolkit", file: "00_Seller_Master_Toolkit.md", chunks: 1, category: "core" },
+  { key: "12_Product_Manifest", file: "12_Product_Manifest.json", chunks: 1, category: "core" },
+  { key: "19_Marketplace_Bundle_Index", file: "19_Marketplace_Bundle_Index.md", chunks: 1, category: "bundle" },
 ] as const as ModuleDefinition[];
 
 export const REQUIRED_CORE_FILES = REQUIRED_CORE_MODULES.map((m) => m.file);
@@ -149,6 +140,17 @@ export const QC_CHECK_IDS = {
   QC_SCORECARD_EXISTS: "qc_scorecard_exists",
   MANUAL_UPLOAD_DISCLAIMER: "manual_upload_disclaimer",
   ANCHOR_REFLECTION: "anchor_reflection",
+  BUYER_CONTENT_NO_SELLER_LEAKAGE: "buyer_content_no_seller_leakage",
+  NO_IGNORED_LEGACY_FILES: "no_ignored_legacy_files",
+  CSV_HEADER_VALID: "csv_header_valid",
+  PDF_DRAFT_REQUIRED_SECTIONS: "pdf_draft_required_sections",
+  PDF_MINIMUM_CONTENT_LENGTH: "pdf_minimum_content_length",
+  SELLER_TOOLKIT_EXISTS: "seller_toolkit_exists",
+  SELLER_TOOLKIT_HAS_PRICING: "seller_toolkit_has_pricing",
+  SELLER_TOOLKIT_HAS_PLATFORM_LISTINGS: "seller_toolkit_has_platform_listings",
+  PROMPTBOOK_PREMIUM_DEPTH: "promptbook_premium_depth",
+  ADAPTER_INTENT_MATCH: "adapter_intent_match",
+  MARKETPLACE_COPY_DIFFERENTIATED: "marketplace_copy_differentiated",
 } as const;
 export type QCCheckId = (typeof QC_CHECK_IDS)[keyof typeof QC_CHECK_IDS];
 
@@ -173,6 +175,7 @@ export interface QCResult {
 }
 
 export interface ProductManifestPayload {
+  architecture: typeof PPA_V2_VERSION;
   mode: "MANUAL_UPLOAD_ONLY";
   api_disabled: true;
   no_api_modules: true;
@@ -182,13 +185,20 @@ export interface ProductManifestPayload {
   release_date: string;
   adapter: string;
   language: string;
+  target_market?: string;
   niche: string;
   license: string;
   marketplaces: string[];
   prompt_count: number;
   files: {
-    core: string[];
-    marketplace: string[];
+    buyer: string[];
+    seller: string[];
+    admin: string[];
+  };
+  exports: {
+    buyer_zip: string;
+    seller_zip: string;
+    full_zip: string;
   };
   expected_modules: ModuleDefinition[];
   expected_chunks: number;
@@ -298,6 +308,11 @@ export const FINAL_BUYER_MODULES = [
   "QC_Scorecard.md",
 ] as const;
 
+export const FINAL_BUYER_FILES = [
+  ...FINAL_BUYER_MODULES,
+  "Product_Handbook.pdf",
+] as const;
+
 export const SELLER_TOOLKIT_FILE = "00_Seller_Master_Toolkit.md" as const;
 
 export const ADMIN_MODULES = [
@@ -309,10 +324,57 @@ export const IGNORED_LEGACY_MODULES = [
   "06_QualityChecklist.md",
   "07_License_Disclaimer.md",
   "08_ManualUploadGuide.md",
+  "10_Pricing_Recommendation.md",
+  "11_Thumbnail_Brief.md",
   "13_Ready_to_Upload_Checklist.md",
+  "14_Cover_Generation_Brief.md",
+  "15_Marketing_Video_CTA_Prompt.md",
   "21_Marketplace_Upload_Asset_Kit.md",
   "99_Assumption_Register.md",
-];
+] as const;
+
+
+export type ProductIntentId =
+  | "CONTENT_REPURPOSING"
+  | "CONTENT_CREATION"
+  | "TEXT_TO_IMAGE_SYSTEM"
+  | "RESEARCH_SYSTEM"
+  | "ACADEMIC_WRITING_SYSTEM"
+  | "BUSINESS_MARKETING_SYSTEM"
+  | "GENERAL_PROMPT_PACK";
+
+export interface ProductIntent {
+  intent: ProductIntentId;
+  confidence: number;
+  secondary_intent?: ProductIntentId;
+  detected_keywords: string[];
+  ambiguity_warning?: string;
+  recommended_adapter: string;
+  mismatch_warning?: string;
+}
+
+export interface ProductStrategy {
+  category: string;
+  buyer_transformation: string;
+  core_promise: string;
+  target_buyer_pain: string;
+  recommended_format: string;
+  prompt_categories: string[];
+  premium_differentiation: string;
+  risk_notes: string[];
+  marketplace_positioning: string;
+}
+
+export interface CommercialReadinessScore {
+  positioning_score: number;
+  prompt_depth_score: number;
+  pdf_premium_score: number;
+  marketplace_copy_score: number;
+  buyer_value_score: number;
+  overall_commercial_score: number;
+  readiness_level: "WEAK" | "USABLE" | "GOOD" | "PREMIUM";
+  recommendations: string[];
+}
 
 // Normalize legacy marketplace display strings to v2 canonical names.
 export function normalizeMarketplace(name: string): string {
