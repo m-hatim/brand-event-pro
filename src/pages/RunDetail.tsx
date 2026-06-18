@@ -585,6 +585,12 @@ export default function RunDetail() {
 
         {/* TAB 7 — QC */}
         <TabsContent value="qc" className="mt-4">
+        </TabsContent>
+        {/* hidden placeholder — real qc content below */}
+      </Tabs>
+      <Tabs defaultValue="qc">
+        <TabsList className="hidden"><TabsTrigger value="qc">QC</TabsTrigger></TabsList>
+        <TabsContent value="qc">
           {bundle.qc ? (
             <Card><CardContent className="p-4 text-sm space-y-2">
               <div className="grid sm:grid-cols-3 gap-2">
