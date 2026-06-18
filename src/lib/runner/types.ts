@@ -65,7 +65,7 @@ export const TONES = [
 
 export const LANGUAGES = ["Indonesia", "English", "Bilingual"] as const;
 export const TARGET_MARKETS = ["Indonesia", "Global", "Indonesia + Global"] as const;
-export const PROMPT_COUNTS = [10, 15, 20, 30] as const;
+export const PROMPT_COUNTS = [10, 12, 15, 20, 30] as const;
 export const LICENSES = ["Personal Use Only", "Personal & Commercial", "Extended License"] as const;
 
 export type ModuleCategory = "core" | "marketplace" | "bundle" | "qc";
