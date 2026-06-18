@@ -1920,6 +1920,179 @@ function marketplaceBundleIndex(seller: ReturnType<typeof sellerMeta>, marketpla
   ].join("\n");
 }
 
+// ---------- Premium Product Architecture v2: Seller Master Toolkit ----------
+
+function platformVoice(platform: string): { tone: string; currency: string; lang: string } {
+  const p = normalizeMarketplace(platform);
+  if (p === "Shopee") return { tone: "SEO-heavy Bahasa Indonesia, short bullet-driven", currency: "IDR", lang: "id" };
+  if (p === "Tokopedia") return { tone: "Formal e-commerce Bahasa Indonesia, emphasize file digital + manual download", currency: "IDR", lang: "id" };
+  if (p === "Lynk.id") return { tone: "Creator-funnel, personal, direct CTA", currency: "IDR", lang: "id" };
+  if (p === "Gumroad") return { tone: "Global storytelling, transformation-focused", currency: "USD", lang: "en" };
+  if (p === "Etsy") return { tone: "Digital template positioning, tag-heavy, instant download wording (no platform-approval claims)", currency: "USD", lang: "en" };
+  if (p === "Envato") return { tone: "Structured documentation, technical quality, organized files", currency: "USD", lang: "en" };
+  if (p === "LemonSqueezy") return { tone: "SaaS-like product page, clean headline, conversion-focused, license clarity", currency: "USD", lang: "en" };
+  return { tone: "Neutral", currency: "USD", lang: "en" };
+}
+
+function marketplaceAdapterCopy(platform: string, seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  const v = platformVoice(platform);
+  const p = normalizeMarketplace(platform);
+  const title = `${seller.brand} — ${seller.niche}`;
+  const sub = adapter === "CODING_AUTOMATION"
+    ? "PRD + Database Schema + Auth + API + Automation + Deployment Prompts"
+    : adapter === "EVIDENCE_HANDBOOK"
+      ? "Evidence Table + Source Log + Claim Checker + Safety Notes"
+      : `${seller.prompt_count} structured prompts + sample + checklist`;
+  return [
+    `### ${p}`,
+    `**Voice / Tone:** ${v.tone}`,
+    `**Suggested Currency:** ${v.currency}`,
+    "",
+    `**Title:** ${title} — ${sub}`,
+    `**Subtitle/Headline:** ${v.lang === "id"
+      ? `Paket prompt terstruktur untuk ${seller.audience}. Upload manual, review seller, no fake claims.`
+      : `Structured prompt system for ${seller.audience}. Manual delivery. Seller-reviewed. No income guarantee.`}`,
+    "",
+    "**Bullet Benefits:**",
+    "- " + (v.lang === "id" ? "PromptBook lengkap (purpose, full prompt, contoh input/output, checklist QA)" : "Premium PromptBook with purpose, full prompt, examples, QA checklist"),
+    "- " + (v.lang === "id" ? "CSV PromptLibrary siap dibuka di spreadsheet" : "CSV PromptLibrary opens in any spreadsheet"),
+    "- " + (v.lang === "id" ? "Sample Input/Output untuk pemula dan advanced" : "Sample Input/Output for beginner and advanced users"),
+    "- " + (v.lang === "id" ? "Usage Guide + Buyer FAQ" : "Usage Guide + Buyer FAQ"),
+    "- " + (v.lang === "id" ? "Premium PDF Handbook" : "Premium PDF Handbook"),
+    "",
+    "**Full Description:**",
+    v.lang === "id"
+      ? `${seller.confirmed_product_description}\n\nPaket ini membantu ${seller.audience} menyusun ${seller.niche} secara terstruktur menggunakan ${seller.prompt_count} prompt yang sudah dipasangkan dengan contoh input/output, panduan pemakaian, FAQ, premium PDF handbook, dan QC scorecard. Semua file dikirim sebagai file digital, dengan upload manual oleh seller. Tidak ada klaim penjualan, viral, atau approval marketplace.`
+      : `${seller.confirmed_product_description}\n\nThis pack helps ${seller.audience} build ${seller.niche} workflows using ${seller.prompt_count} prompts paired with worked examples, usage guide, FAQ, a premium PDF handbook, and a QC scorecard. Files are delivered digitally and listed manually by the seller. No sales/viral/marketplace approval claims are made.`,
+    "",
+    `**Keywords / Tags:** ${v.lang === "id" ? "prompt pack, prompt AI, " : "ai prompts, prompt pack, "}${seller.niche.toLowerCase()}, ${adapter.toLowerCase().replace(/_/g, " ")}, ${p.toLowerCase()}`,
+    `**Suggested Category:** Digital Goods / Templates / AI Prompts`,
+    "",
+    "**Upload Checklist:**",
+    "- [ ] Cover image disiapkan sesuai brief.",
+    "- [ ] Buyer ZIP atau link delivery tested.",
+    "- [ ] Description direview tanpa klaim terlarang.",
+    "- [ ] Tags / category dipilih sesuai aturan platform.",
+    "- [ ] License & disclaimer disertakan.",
+    "- [ ] Kebijakan platform terbaru sudah dicek.",
+    "",
+    "**Recommended Image Order:**",
+    "1. Hero cover (title + subtitle + 3 benefit bullets)",
+    "2. File map mockup (preview isi folder)",
+    "3. PromptBook page preview",
+    "4. Sample Input/Output preview",
+    "5. PDF Handbook cover preview",
+    "",
+    `**Platform-Specific Positioning:** ${v.tone}.`,
+    "",
+  ].join("\n");
+}
+
+function sellerMasterToolkit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
+  const mps = (marketplaces ?? []).map(normalizeMarketplace);
+  const base = Math.max(49000, Math.round(seller.prompt_count * 7500));
+  return [
+    `# Seller Master Toolkit — ${seller.brand}`,
+    "",
+    "> Konsolidasi semua materi seller-side: pricing, brief visual, video CTA, dan listing per marketplace. **File ini tidak boleh dimasukkan ke Buyer ZIP.**",
+    "",
+    "## 1. Seller Overview",
+    `- **Product Name:** ${seller.brand}`,
+    `- **Niche:** ${seller.niche}`,
+    `- **Target Buyer:** ${seller.audience}`,
+    `- **Product Format:** Digital pack (Markdown + CSV + premium PDF handbook)`,
+    `- **License:** ${seller.license}`,
+    `- **Marketplace Targets:** ${mps.join(", ") || "—"}`,
+    `- **Recommended Positioning:** Premium digital product system (PromptBook + PDF handbook + seller toolkit). Manual upload only.`,
+    "",
+    "## 2. Pricing Recommendation",
+    `- **Starter (IDR):** Rp ${Math.round(base * 0.65).toLocaleString("id-ID")}`,
+    `- **Standard (IDR):** Rp ${base.toLocaleString("id-ID")}`,
+    `- **Premium (IDR):** Rp ${Math.round(base * 1.8).toLocaleString("id-ID")}`,
+    `- **Bundle (IDR):** Rp ${Math.round(base * 2.6).toLocaleString("id-ID")}`,
+    `- **Standard (USD):** $${Math.max(9, Math.round((base / 15500) * 1.0))}`,
+    `- **Premium (USD):** $${Math.max(19, Math.round((base / 15500) * 1.8))}`,
+    `- **Justification:** Heuristic dari jumlah prompt (${seller.prompt_count}), kompleksitas adapter (${adapter}), dan kelengkapan (PDF handbook, QC scorecard, multi-marketplace listing).`,
+    "- **Note:** Pricing bersifat heuristic only dan wajib divalidasi manual lewat kompetitor + price test.",
+    "",
+    "## 3. Thumbnail Brief",
+    "**5 Konsep Thumbnail:**",
+    "1. Bold typography + file mockup di belakang.",
+    "2. Hero cover dark editorial + 3 benefit bullets.",
+    "3. Mockup laptop/tablet menampilkan PDF handbook.",
+    "4. Split layout: problem (kiri) → solution (kanan).",
+    "5. Badge \"Premium Product Architecture v2\" + nama produk.",
+    "**Recommended First Image:** konsep 2 (hero cover + 3 benefit bullets) — paling kuat untuk thumbnail kecil.",
+    "**Size:** 1200×1500 (Shopee/Tokopedia), 1280×800 (Gumroad/LemonSqueezy), 2000×2000 (Etsy/Envato).",
+    "**Text Display:** judul produk, niche, 3 benefit, tag manual upload.",
+    "**Visual Hierarchy:** judul → benefit → file mockup → CTA tipis.",
+    "**Safe Notes:** jangan pakai logo resmi marketplace atau badge palsu.",
+    "",
+    "## 4. Cover Generation Brief",
+    "**A4 PDF Cover Prompt:** Editorial premium book cover, niche-specific iconography, clean serif title, soft gradient background, no logos, no faces, A4 portrait.",
+    "**Square Marketplace Cover Prompt:** 1:1 cover with bold title, subtitle, 3 benefit bullets, soft 3D mockup of a PDF and a CSV file, dark editorial palette.",
+    "**Gumroad/Etsy Style Cover Prompt:** 4:3 hero shot with file-stack mockup, friendly typography, neutral background, leave bottom 20% empty for marketplace overlay.",
+    "**Negative Prompt:** no logos, no marketplace badges, no celebrity faces, no fake \"#1 bestseller\" stickers, no copyrighted brand artwork.",
+    "**Text That Must Appear:** product name, subtitle, manual-upload note.",
+    "**Visual Style:** premium editorial, calm, high-contrast typography.",
+    "",
+    "## 5. Marketing Video CTA Script",
+    "**15-second:**",
+    "- 0–3s Hook: \"Stop selling raw prompts. Sell a system.\"",
+    "- 3–9s Scene: mockup of files (PromptBook, CSV, PDF handbook, seller toolkit).",
+    "- 9–12s Voiceover: \"Premium Product Architecture v2 — terstruktur dan siap upload manual.\"",
+    "- 12–15s CTA: \"Preview the pack di link.\" Caption: \"Manual upload only. Seller-reviewed.\"",
+    "**30-second:**",
+    "- 0–3s Hook (same).",
+    "- 3–10s Problem framing: prompt pack biasa terlalu generic.",
+    "- 10–20s Solution: tunjukkan struktur 3-layer (Buyer / Seller / Admin).",
+    "- 20–27s Benefit bullets on screen.",
+    "- 27–30s CTA + safe wording.",
+    "**Safe Wording:** tidak menjanjikan sales/income/viral.",
+    "",
+    "## 6. Marketplace Listing Drafts",
+    ...(mps.length ? mps.map((mp) => marketplaceAdapterCopy(mp, seller, adapter)) : ["_Belum ada marketplace yang dipilih._"]),
+    "",
+    "## 7. Product Manifest Summary",
+    "- **Architecture:** PREMIUM_PRODUCT_ARCHITECTURE_V2",
+    "- **Mode:** MANUAL_UPLOAD_ONLY",
+    `- **Adapter:** ${adapter}`,
+    `- **Language:** ${seller.language}`,
+    `- **Niche:** ${seller.niche}`,
+    `- **License:** ${seller.license}`,
+    `- **Prompt Count:** ${seller.prompt_count}`,
+    `- **Marketplaces:** ${mps.join(", ") || "—"}`,
+    "- **Manual Upload Only:** true",
+    "",
+    "## 8. Bundle Index",
+    "```text",
+    "/premium-product-system_v1.0/",
+    "  BUYER_PACKAGE/",
+    "    01_Product_Brief.md",
+    "    02_PromptBook.md",
+    "    03_PromptLibrary.csv",
+    "    04_UsageGuide.md",
+    "    05_Sample_Input_Output.md",
+    "    09_Buyer_FAQ.md",
+    "    20_Complete_PDF_Product_Draft.md",
+    "    Product_Handbook.pdf",
+    "    QC_Scorecard.md",
+    "  SELLER_TOOLKIT/",
+    "    00_Seller_Master_Toolkit.md",
+    "  ADMIN_MANIFEST/",
+    "    12_Product_Manifest.json",
+    "    19_Marketplace_Bundle_Index.md",
+    "```",
+    "**ZIP Names:**",
+    "- `premium-product-system_v1.0_buyer.zip`",
+    "- `premium-product-system_v1.0_seller-toolkit.zip`",
+    "- `premium-product-system_v1.0_full-system.zip`",
+    "",
+    "## 9. Safety Reminder",
+    "Manual upload only. No marketplace API. No auto-publish. No fake testimonials, no income claims, no marketplace-approval claims. Seller wajib review tiap listing sebelum publish.",
+  ].join("\n");
+}
+
 export function generateModuleContent(args: {
   moduleKey: string;
   fileName: string;
@@ -1951,6 +2124,7 @@ export function generateModuleContent(args: {
     case "13_Ready_to_Upload_Checklist.md": content = readyToUploadChecklist(seller); break;
     case "99_Assumption_Register.md": content = assumptionRegister(seller, adapter, args.marketplaces); break;
     case "QC_Scorecard.md": content = qcScorecardTemplate(seller); break;
+    case "00_Seller_Master_Toolkit.md": content = sellerMasterToolkit(seller, adapter, args.marketplaces); break;
     default:
       if (Object.values(MARKETPLACE_MODULES).some((m) => m.file === args.fileName) || args.fileName === MARKETPLACE_BUNDLE_MODULE.file) {
         content = marketplaceListing(args.fileName, seller, adapter, args.marketplaces);
