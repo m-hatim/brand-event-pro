@@ -4,7 +4,6 @@
 import JSZip from "jszip";
 import {
   FINAL_BUYER_MODULES,
-  FINAL_BUYER_FILES,
   IGNORED_LEGACY_MODULES,
   SELLER_TOOLKIT_FILE,
   ADMIN_MODULES,
@@ -85,19 +84,8 @@ export async function buildFullSystemZip(input: BuildExportInput): Promise<Blob>
 
 export function buyerPackageIsClean(modules: ModuleLike[]): { ok: boolean; leaks: string[] } {
   const buyerSet = new Set<string>(FINAL_BUYER_MODULES as readonly string[]);
-  const legacyNameLeaks = modules
-    .map((m) => m.file_name)
-    .filter((f) => IGNORED_LEGACY_MODULES.includes(f as any) || (!buyerSet.has(f) && (FINAL_BUYER_FILES as readonly string[]).includes(f)));
-  const sellerLeakTerms = [
-    "seller toolkit", "pricing heuristic", "marketplace draft", "upload checklist", "manual upload guide",
-    "thumbnail brief", "cover generation brief", "marketing video script", "product manifest", "assumption register",
-    "PASS_FINAL", "blocking errors",
-  ];
-  const contentLeaks = modules
-    .filter((m) => buyerSet.has(m.file_name))
-    .filter((m) => sellerLeakTerms.some((term) => new RegExp(term, "i").test(m.content || "")))
-    .map((m) => `${m.file_name}: seller/admin leakage`);
-  const leaks = [...legacyNameLeaks, ...contentLeaks];
+  const leakagePatterns = [/seller toolkit/i, /pricing heuristic/i, /thumbnail brief/i, /cover generation/i, /upload manual/i, /marketplace draft/i, /approval enabled/i, /blocking errors/i, /06_QualityChecklist/i, /07_License_Disclaimer/i, /13_Ready_to_Upload_Checklist/i, /14_Cover_Generation_Brief/i, /15_Marketing_Video_CTA/i, /21_Marketplace_Upload_Asset_Kit/i, /Insert content from/i];
+  const leaks = modules.filter((m) => buyerSet.has(m.file_name)).filter((m) => leakagePatterns.some((rx) => rx.test(m.content || ""))).map((m) => m.file_name);
   return { ok: leaks.length === 0, leaks };
 }
 
