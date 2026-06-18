@@ -1765,7 +1765,16 @@ export function generateActualQCScorecardContent(args: { seller: SellerMeta; qc:
 
 
 function marketplaceListing(fileName: string, seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
-  const marketplace = /Shopee/i.test(fileName) ? "Shopee" : /Tokopedia/i.test(fileName) ? "Tokopedia" : /Lynk/i.test(fileName) ? "Lynk.id" : /Gumroad/i.test(fileName) ? "Gumroad" : /Etsy/i.test(fileName) ? "Etsy" : /Payhip/i.test(fileName) ? "Payhip" : /Lemon/i.test(fileName) ? "Lemon Squeezy" : "Marketplace";
+  const marketplace = /Shopee/i.test(fileName) ? "Shopee"
+    : /Tokopedia/i.test(fileName) ? "Tokopedia"
+    : /Lynk/i.test(fileName) ? "Lynk.id"
+    : /Gumroad/i.test(fileName) ? "Gumroad"
+    : /Etsy/i.test(fileName) ? "Etsy"
+    : /Envato/i.test(fileName) ? "Envato"
+    : /LemonSqueezy/i.test(fileName) ? "LemonSqueezy"
+    : /Payhip/i.test(fileName) ? "Payhip"
+    : /Lemon/i.test(fileName) ? "Lemon Squeezy"
+    : "Marketplace";
   if (fileName === "19_Marketplace_Bundle_Index.md") return marketplaceBundleIndex(seller, marketplaces);
   const adapterCopy: Record<ResolvedAdapter, { title: string; hook: string; description: string; benefits: string[]; faq: string[]; tags: string[] }> = {
     TEXT_TO_IMAGE: {

@@ -98,6 +98,7 @@ export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
   { key: "13_Ready_to_Upload_Checklist", file: "13_Ready_to_Upload_Checklist.md", chunks: 1, category: "core" },
   { key: "99_Assumption_Register", file: "99_Assumption_Register.md", chunks: 1, category: "core" },
   { key: "QC_Scorecard", file: "QC_Scorecard.md", chunks: 1, category: "qc" },
+  { key: "00_Seller_Master_Toolkit", file: "00_Seller_Master_Toolkit.md", chunks: 1, category: "core" },
 ] as const as ModuleDefinition[];
 
 export const REQUIRED_CORE_FILES = REQUIRED_CORE_MODULES.map((m) => m.file);
