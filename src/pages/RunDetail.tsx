@@ -649,6 +649,7 @@ function handbookMetaFromBundle(bundle: any) {
     license: bundle?.seller?.license || "Personal & Commercial",
     version: "1.0",
     releaseDate: new Date().toISOString().slice(0, 10),
+    language: bundle?.seller?.language || "Indonesia",
   };
 }
 
