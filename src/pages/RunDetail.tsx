@@ -39,6 +39,8 @@ import {
   isForbiddenModuleKey,
   statusLabel,
 } from "@/lib/runner/types";
+import { buildBuyerZip, buildSellerZip, buildFullSystemZip, downloadBlob as v2DownloadBlob, buyerPackageIsClean } from "@/lib/runner/zipExport";
+import { generateProductHandbookPdf } from "@/lib/runner/pdf";
 
 const BUYER_PACKAGE_FILES = new Set([
   "01_Product_Brief.md",
@@ -342,6 +344,8 @@ export default function RunDetail() {
           <TabsTrigger value="pembuat">Pembuat File</TabsTrigger>
           <TabsTrigger value="paket">Paket Marketplace</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="pdf">PDF Handbook</TabsTrigger>
+          <TabsTrigger value="export">Premium Export v2</TabsTrigger>
           <TabsTrigger value="qc">Pemeriksaan Kualitas</TabsTrigger>
           <TabsTrigger value="approval">Persetujuan Final</TabsTrigger>
         </TabsList>
