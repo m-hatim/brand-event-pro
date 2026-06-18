@@ -110,8 +110,8 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
   if (/(ready[-\s]?to[-\s]?sell|siap jual|produk siap|productized|launch pack|cover|thumbnail|complete pdf|pdf product|gumroad product|marketplace asset|seller asset|sales asset|cta video|marketing video|product page asset|upload asset)/.test(n)) return "READY_TO_SELL_PRODUCT";
   if (/(handbook|vault|playbook|field guide|guidebook|reference pack|referensi kuat|evidence[-\s]?based handbook|supplement|suplemen|nutrition|nutrisi|fitness|health guide|claim checker|source log|evidence table)/.test(n)) return "EVIDENCE_HANDBOOK";
   if (/(academic|akademik|writing|penulisan|skripsi|tesis|jurnal|paper|laporan kasus|case report|case reflection|keperawatan|medis|medical|clinical|klinis|ners|evidence[-\s]?based)/.test(n)) return "ACADEMIC_WRITING";
-  if (/(riset|research|literatur)/.test(n)) return "RESEARCH";
-  if (/(konten|caption|copywriting|sosial media|content)/.test(n)) return "CONTENT_CREATION";
+  if (/(due\s?diligence|akuisisi|acquisition|validasi usaha|analisis risiko|risk assessment|calon investor|investor kecil|wawancara pemilik|keuangan dasar|dokumen legal|riset|research|literatur)/.test(n)) return "RESEARCH";
+  if (/(repurpose|hook|short[-\s]?form|konten|caption|copywriting|sosial media|content|tiktok|reels|youtube shorts)/.test(n)) return "CONTENT_CREATION";
   if (/(bisnis|marketing|sales|funnel|brand)/.test(n)) return "BUSINESS_MARKETING";
   return "CUSTOM";
 }
@@ -184,26 +184,12 @@ export function generateArchitecture(input: {
     targetMarket: "Indonesia",
   }, intent);
   return {
-    product_positioning: `${brand} diposisikan sebagai ${strategy.category} untuk niche "${niche}". Fokus produk adalah buyer transformation: ${strategy.buyer_transformation}.`,
-    target_audience_fit: `Audiens utama: ${audience}. Buyer package dibuat sebagai produk final, sedangkan pricing, listing, thumbnail, cover, dan strategi upload dipisahkan ke Seller Master Toolkit.`,
-    weakness_detection: intent.mismatch_warning || intent.ambiguity_warning || "Risiko utama: output bisa terasa generik jika input produk terlalu pendek. Mitigasi: Product Intent, Product Strategy, PromptBook premium depth, PDF handbook, dan Commercial Readiness Gate.",
+    product_positioning: `${brand} diposisikan sebagai ${strategy.category} untuk niche "${niche}". Fokusnya adalah buyer transformation: ${strategy.buyer_transformation}.`,
+    target_audience_fit: `Audiens utama: ${audience}. Buyer Package adalah produk final untuk pembeli. Seller Toolkit, pricing, listing, thumbnail, cover, dan upload checklist dipisahkan dari Buyer Package.`,
+    weakness_detection: intent.mismatch_warning || intent.ambiguity_warning || "Risiko utama: output bisa terasa generik jika input terlalu pendek. Mitigasi: Product Intent, Product Strategy, PromptBook premium depth, PDF handbook, dan Commercial Readiness Gate.",
     prompt_architecture_overview: `Premium Product Architecture v2 menghasilkan Buyer Package, Seller Toolkit, dan Admin Manifest. Marketplace: ${marketplaces}. Semua upload tetap manual.`,
     marketplace_preview: `Marketplace copy dibedakan per platform dan dikonsolidasikan di Seller Master Toolkit. Tidak ada file API_* dan tidak ada auto-publish.`,
     qc_readiness: `PASS_FINAL membutuhkan technical QC >= ${QC_THRESHOLDS.PREMIUM_MIN}, blocking_errors = 0, dan Commercial Readiness >= 85.`,
-  };
-}): ArchitecturePayload {
-  const brand = normalizeText(input.brand || "Brand Anda");
-  const niche = titleCaseSoft(input.niche || "produk prompt");
-  const audience = normalizeText(input.audience || "UMKM dan seller online");
-  const marketplaces = input.marketplaces?.length ? input.marketplaces.join(", ") : "marketplace pilihan";
-  const adapter = resolveAdapter(input.adapter || "CUSTOM", niche);
-  return {
-    product_positioning: `${brand} diposisikan sebagai paket prompt ${adapter} untuk niche "${niche}" dengan tone ${input.tone || "Friendly"}. Fokusnya adalah membuat buyer lebih mudah menyusun output terstruktur, bukan menjanjikan hasil bisnis.`,
-    target_audience_fit: `Audiens utama: ${audience}. Struktur file dibuat agar buyer bisa mulai dari README, lalu PromptBook, Sample Input/Output, Usage Guide, dan Quality Checklist.`,
-    weakness_detection: "Risiko utama: output bisa terlalu generik jika deskripsi, niche, dan target audiens terlalu pendek. Mitigasi: auto-correction, key anchors, sample input/output, testing report, dan QC scorecard.",
-    prompt_architecture_overview: `Manifest wajib menghasilkan ${REQUIRED_CORE_MODULES.length} core file sell-ready, file marketplace hanya untuk ${marketplaces}, dan semua upload tetap manual.`,
-    marketplace_preview: `Draft listing dibuat hanya untuk marketplace yang dipilih: ${marketplaces}. Tidak ada file API_* dan tidak ada klaim auto-publish.`,
-    qc_readiness: `QC menilai kelengkapan file, prompt count, CSV, duplikasi prompt, sample IO, license, pricing heuristic, manifest JSON, assumption register, klaim terlarang, dan score sellability 85/95.`,
   };
 }
 
@@ -832,10 +818,11 @@ export function detectProductIntent(args: {
 }): ProductIntent {
   const combined = normalizeText(`${args.productName} ${args.niche} ${args.targetAudience} ${args.description}`).toLowerCase();
   const patterns: Record<ProductIntentId, string[]> = {
+    DUE_DILIGENCE_SYSTEM: ["due diligence", "akuisisi", "acquisition", "beli bisnis", "membeli usaha", "validasi akuisisi", "analisis risiko", "risk assessment", "calon investor", "investor kecil", "wawancara pemilik", "validasi keuangan", "keuangan dasar", "red flag", "dokumen legal", "operasional usaha"],
     CONTENT_REPURPOSING: ["repurpose", "hook", "short form", "short-form", "tiktok", "reels", "youtube shorts", "caption", "script", "long to short", "konten pendek", "konten viral"],
     CONTENT_CREATION: ["content creator", "konten", "content", "copywriting", "caption", "post", "newsletter", "carousel", "social media"],
     TEXT_TO_IMAGE_SYSTEM: ["image generation", "prompt gambar", "gambar", "visual", "design", "thumbnail", "midjourney", "dall", "flux", "stable diffusion", "ai art", "poster"],
-    RESEARCH_SYSTEM: ["riset", "research", "market research", "competitor", "survey", "interview", "data collection", "insight", "analysis", "analisis", "laporan riset"],
+    RESEARCH_SYSTEM: ["riset", "research", "market research", "competitor", "survey", "interview", "data collection", "insight", "analysis", "analisis", "laporan riset", "triangulasi", "sintesis"],
     ACADEMIC_WRITING_SYSTEM: ["academic", "akademik", "paper", "thesis", "skripsi", "tesis", "citation", "literature review", "jurnal"],
     BUSINESS_MARKETING_SYSTEM: ["marketing", "sales", "funnel", "offer", "positioning", "brand", "campaign", "objection", "copywriting"],
     GENERAL_PROMPT_PACK: [],
@@ -846,10 +833,13 @@ export function detectProductIntent(args: {
   }).sort((a, b) => b.score - a.score);
   const primary = scored[0]?.score ? scored[0] : { intent: "GENERAL_PROMPT_PACK" as ProductIntentId, score: 0, matched: [] };
   const secondary = scored[1]?.score && scored[1].score >= Math.max(1, primary.score * 0.45) ? scored[1].intent : undefined;
-  const confidence = Math.min(100, Math.max(35, primary.score * 18));
+  const confidence = Math.min(100, Math.max(45, primary.score * 14));
   let recommended = args.selectedAdapter || "CUSTOM";
   let mismatch: string | undefined;
-  if (primary.intent === "CONTENT_REPURPOSING" && args.selectedAdapter === "TEXT_TO_IMAGE") {
+  if (primary.intent === "DUE_DILIGENCE_SYSTEM" && args.selectedAdapter !== "RESEARCH") {
+    recommended = "RESEARCH";
+    mismatch = `Produk ini terdeteksi sebagai due diligence/research system. Adapter ${args.selectedAdapter} perlu direview; rekomendasi: RESEARCH agar output berisi riset, checklist risiko, wawancara, validasi, dan ringkasan temuan, bukan funnel/sales copy.`;
+  } else if (primary.intent === "CONTENT_REPURPOSING" && args.selectedAdapter === "TEXT_TO_IMAGE") {
     recommended = "CONTENT_CREATION";
     mismatch = "Produk ini terdeteksi sebagai content repurposing, tetapi adapter yang dipilih TEXT_TO_IMAGE. Gunakan CONTENT_CREATION agar output berisi hook, script, caption, CTA, dan platform adaptation, bukan prompt gambar.";
   } else if (primary.intent === "RESEARCH_SYSTEM" && args.selectedAdapter !== "RESEARCH") {
@@ -887,6 +877,17 @@ export function generateProductStrategy(args: {
   targetMarket: string;
 }, intent: ProductIntent): ProductStrategy {
   const strategies: Record<ProductIntentId, ProductStrategy> = {
+    DUE_DILIGENCE_SYSTEM: {
+      category: "Small Business Due Diligence Research System",
+      buyer_transformation: "dari niat membeli bisnis kecil yang masih penuh asumsi menjadi daftar pertanyaan, dokumen, risiko, dan ringkasan temuan yang bisa direview sebelum mengambil keputusan",
+      core_promise: "membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur tanpa menggantikan nasihat hukum, pajak, atau finansial profesional",
+      target_buyer_pain: "calon pembeli usaha sering tidak tahu apa yang harus ditanyakan, dokumen apa yang perlu dicek, risiko apa yang harus dipetakan, dan bagaimana merangkum temuan sebelum membeli bisnis kecil",
+      recommended_format: "buyer due diligence playbook + prompt sequence + checklist risiko + sample interview/output",
+      prompt_categories: ["Acquisition Goal Clarifier", "Seller Interview Builder", "Business Model Snapshot", "Revenue Verification Checklist", "Operational Risk Mapping", "Customer Dependency Analysis", "Supplier & Vendor Review", "Basic Financial Red Flag Scanner", "Legal Document Question List", "Deal Assumption Register", "Risk Summary Report", "Final Due Diligence Review"],
+      premium_differentiation: "menggabungkan pertanyaan riset, checklist risiko, interview seller, validasi dokumen, dan safe-use guard agar buyer tidak menganggap output AI sebagai rekomendasi investasi final",
+      risk_notes: ["bukan nasihat hukum, pajak, investasi, atau finansial", "angka dan dokumen harus diverifikasi manual", "keputusan membeli bisnis harus melibatkan profesional terkait jika risikonya signifikan"],
+      marketplace_positioning: "alat bantu riset awal untuk pemilik UMKM dan calon investor kecil yang ingin mengevaluasi bisnis sebelum akuisisi",
+    },
     CONTENT_REPURPOSING: {
       category: "Short-Form Content Repurposing System",
       buyer_transformation: "dari satu konten panjang menjadi kumpulan hook, script pendek, caption, CTA, dan variasi platform yang siap direview",
@@ -989,6 +990,55 @@ function currentStrategy(seller: ReturnType<typeof sellerMeta>, adapter: Resolve
   return { intent, strategy };
 }
 
+
+function buildIntentPromptLibrary(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): PromptSpec[] {
+  const { strategy, intent } = currentStrategy(seller, adapter);
+  const categories = strategy.prompt_categories.length ? strategy.prompt_categories : ["Discovery", "Drafting", "Review"];
+  const safe = intent.intent === "DUE_DILIGENCE_SYSTEM"
+    ? "Gunakan sebagai alat bantu riset awal. Ini bukan nasihat hukum, pajak, investasi, atau finansial. Verifikasi dokumen, angka, dan temuan dengan profesional terkait sebelum mengambil keputusan."
+    : strategy.risk_notes.join(" ") || "Output harus direview manual sebelum digunakan.";
+  const prompts: PromptSpec[] = [];
+  for (let i = 0; i < seller.prompt_count; i += 1) {
+    const category = categories[i % categories.length];
+    const title = category;
+    const variables = intent.intent === "DUE_DILIGENCE_SYSTEM"
+      ? ["target_bisnis", "tujuan_akuisisi", "data_yang_dimiliki", "risiko_yang_dicemaskan", "format_output"]
+      : ["konteks", "target_audience", "tujuan", "batasan", "format_output"];
+    prompts.push({
+      id: `${intent.intent.toLowerCase()}-${String(i + 1).padStart(2, "0")}`,
+      title,
+      category,
+      target_user: seller.audience,
+      use_case: `${category} untuk ${seller.niche}`,
+      purpose: `Membantu buyer menjalankan tahap ${category} secara spesifik untuk ${seller.niche}.`,
+      when_to_use: `Gunakan ketika buyer perlu menyusun ${category.toLowerCase()} sebelum membuat keputusan atau memakai output lanjut.`,
+      beginner_mode: `Isi variabel utama dengan konteks singkat. Fokuskan output pada ${category}, daftar temuan, dan hal yang harus diverifikasi manual.`,
+      advanced_mode: `Tambahkan dokumen/data yang tersedia, asumsi, batasan analisis, format tabel, prioritas risiko, dan pertanyaan lanjutan agar output ${category} lebih tajam.`,
+      full_prompt: `Anda adalah analis riset yang hati-hati. Bantu saya membuat ${category} untuk niche "${seller.niche}".\n\nKonteks produk/bisnis: {{target_bisnis}}\nTujuan buyer: {{tujuan_akuisisi}}\nData yang sudah tersedia: {{data_yang_dimiliki}}\nRisiko yang dicemaskan: {{risiko_yang_dicemaskan}}\nFormat output yang diminta: {{format_output}}\n\nTugas Anda:\n1. Susun output sesuai kategori ${category}.\n2. Pisahkan fakta, asumsi, pertanyaan lanjutan, dan red flag.\n3. Tulis dokumen/data yang perlu diminta kepada pemilik bisnis.\n4. Berikan checklist validasi manual.\n5. Jangan memberi keputusan final membeli/tidak membeli.\n6. Jangan memberi nasihat hukum, pajak, investasi, atau finansial final.\n7. Akhiri dengan catatan verifikasi profesional jika risikonya material.`,
+      input_variables: variables,
+      example_filled_input: intent.intent === "DUE_DILIGENCE_SYSTEM"
+        ? `target_bisnis: kedai kopi kecil dengan 2 cabang; tujuan_akuisisi: membeli usaha aktif; data_yang_dimiliki: omzet bulanan klaim seller dan daftar aset; risiko_yang_dicemaskan: sewa tempat, hutang, pelanggan menurun; format_output: tabel risiko + pertanyaan wawancara`
+        : `konteks: ${seller.niche}; target_audience: ${seller.audience}; tujuan: ${category}; batasan: hindari klaim hasil pasti; format_output: tabel + checklist`,
+      expected_output: `Output ${category} yang berisi ringkasan, daftar pertanyaan, checklist, red flag, asumsi, dan langkah verifikasi manual.`,
+      quality_checklist: [
+        `Output fokus pada ${category}.`,
+        "Ada pemisahan fakta, asumsi, dan pertanyaan lanjutan.",
+        "Ada checklist validasi manual.",
+        "Tidak memberi jaminan hasil atau keputusan final.",
+        "Bahasa sesuai target buyer.",
+      ],
+      common_mistakes: [
+        "Menggunakan data yang belum diverifikasi sebagai fakta.",
+        "Langsung menyimpulkan bisnis aman atau tidak aman.",
+        "Melupakan dokumen pendukung dan wawancara lanjutan.",
+      ],
+      safe_use_note: safe,
+      output_type: intent.intent === "DUE_DILIGENCE_SYSTEM" ? "due-diligence-checklist" : "structured-markdown",
+    });
+  }
+  return prompts;
+}
+
 function isAcademicCaseReportNiche(niche: string): boolean {
   return /(laporan kasus|case report|case reflection|clinical|klinis|keperawatan|medis|medical|ners|patient|pasien|asuhan keperawatan|evidence[-\s]?based)/i.test(niche);
 }
@@ -1050,132 +1100,95 @@ function productBrief(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAd
     `**Jumlah Prompt:** ${seller.prompt_count}`,
     `**Lisensi:** ${seller.license}`,
     "",
-    "## Product Promise",
+    "## Ringkasan Produk",
     strategy.core_promise,
     "",
-    "## Buyer Transformation",
-    strategy.buyer_transformation,
-    "",
-    "## Masalah yang Diselesaikan",
+    "## Masalah Buyer",
     strategy.target_buyer_pain,
     "",
-    "## Yang Buyer Dapatkan",
+    "## Solusi Produk",
+    `Paket ini membantu ${seller.audience} menjalankan workflow ${strategy.category} secara lebih rapi melalui PromptBook, PromptLibrary CSV, contoh input-output, handbook, dan checklist review. Produk ini berfungsi sebagai alat bantu kerja, bukan sistem otomatis dan bukan pengganti review profesional.`,
+    "",
+    "## Yang Disediakan Paket Ini",
     mdList([
-      "PromptBook lengkap dengan beginner mode, advanced mode, contoh input, expected output, checklist, dan common mistakes.",
-      "PromptLibrary CSV untuk menelusuri prompt dengan cepat.",
-      "Usage Guide untuk memakai prompt dari awal sampai review output.",
-      "Sample Input & Output agar buyer punya gambaran nyata cara memakai produk.",
-      "Product Handbook PDF sebagai playbook pembelajaran dan referensi penggunaan.",
+      "PromptBook lengkap dengan beginner mode, advanced mode, input variables, full prompt, expected output, quality checklist, common mistakes, dan manual verification note.",
+      "PromptLibrary CSV untuk mencari dan memakai prompt secara cepat.",
+      "Usage Guide untuk menjalankan workflow dari tahap awal sampai review output.",
+      "Sample Input & Output agar buyer punya contoh pemakaian nyata.",
+      "Product Handbook PDF sebagai playbook penggunaan.",
       "Buyer Output Review Checklist untuk mengecek output AI sebelum dipakai.",
     ]),
     "",
-    "## Cara Produk Ini Dipakai",
+    "## Untuk Siapa",
+    mdList([seller.audience, "buyer yang ingin workflow prompt terstruktur", "pengguna AI yang bersedia melakukan review dan validasi manual"]),
+    "",
+    "## Tidak Cocok Untuk",
     mdList([
-      "Pilih prompt sesuai tahap kerja.",
-      "Isi variabel dengan konteks asli milik buyer.",
-      "Jalankan prompt di AI tool yang digunakan buyer.",
-      "Bandingkan output dengan contoh dan checklist.",
-      "Edit, verifikasi, lalu gunakan sesuai kebutuhan buyer.",
+      "buyer yang mencari software otomatis",
+      "buyer yang ingin jaminan income, sales, viral, approval marketplace, atau hasil bisnis tertentu",
+      "buyer yang ingin memakai output AI tanpa validasi manual",
     ]),
     "",
-    "## Produk Ini Bukan",
-    mdList([
-      "Bukan jaminan hasil bisnis, sales, viral, ranking, atau approval platform.",
-      "Bukan pengganti review manusia, riset sumber, atau validasi profesional.",
-      "Bukan lisensi untuk menjual ulang file asli apa adanya kecuali lisensi khusus menyatakan berbeda.",
-    ]),
-    "",
-    "## Safe Use Notes",
+    "## Catatan Aman",
     mdList(strategy.risk_notes),
     "",
-    "## Product Intelligence Summary",
-    `- **Detected Intent:** ${intent.intent}`,
-    `- **Confidence:** ${intent.confidence}/100`,
-    `- **Recommended Format:** ${strategy.recommended_format}`,
-    intent.mismatch_warning ? `- **Adapter Warning:** ${intent.mismatch_warning}` : "- **Adapter Fit:** sesuai secara awal, tetap review manual.",
-  ].join("
-");
+    intent.mismatch_warning ? `> Catatan sistem: ${intent.mismatch_warning}` : "",
+    `Marketplace target untuk seller: ${marketplaces.map(normalizeMarketplace).join(", ") || "belum dipilih"}. Informasi listing, pricing, thumbnail, cover, dan upload tidak masuk ke Buyer Package; semuanya dipisahkan ke Seller Toolkit.`,
+  ].filter(Boolean).join("\n");
 }
 
 function promptBook(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
   const { intent, strategy } = currentStrategy(seller, adapter);
-  const prompts = buildPromptLibrary(adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
-  const categories = strategy.prompt_categories;
+  const prompts = buildIntentPromptLibrary(seller, adapter);
   const lines: string[] = [
     `# PromptBook — ${seller.brand}`,
     "",
-    `**Detected Product Intent:** ${intent.intent} (${intent.confidence}/100)`,
     `**Product Category:** ${strategy.category}`,
     `**Buyer Transformation:** ${strategy.buyer_transformation}`,
     "",
-    "## How This Prompt System Works",
-    "PromptBook ini disusun sebagai sistem kerja bertahap, bukan kumpulan prompt satu baris. Setiap prompt memiliki tujuan, konteks penggunaan, variabel input, mode pemula, mode advanced, expected output, checklist, common mistakes, dan catatan validasi manual.",
+    "## Cara Kerja Prompt System Ini",
+    "PromptBook ini disusun sebagai sistem bertahap. Setiap prompt punya tujuan, kapan digunakan, variabel input, contoh pemula, contoh advanced, full prompt, expected output, checklist kualitas, common mistakes, dan catatan verifikasi manual.",
     "",
     "## Prompt Categories",
-    mdList(categories.slice(0, seller.prompt_count)),
+    mdList(strategy.prompt_categories.slice(0, seller.prompt_count)),
     "",
   ];
   prompts.forEach((prompt, i) => {
-    const category = categories[i % categories.length] || prompt.category;
-    const title = `${category} — ${prompt.title}`;
-    lines.push(`## ${i + 1}. ${title}`);
-    lines.push(`**Purpose:** ${prompt.purpose || `Membantu buyer menjalankan tahap ${category} secara lebih terstruktur.`}`);
-    lines.push(`**When to Use:** ${prompt.when_to_use || `Gunakan ketika buyer berada di tahap ${category}.`}`);
+    lines.push(`## ${i + 1}. ${prompt.title}`);
+    lines.push(`**Purpose:** ${prompt.purpose}`);
+    lines.push(`**When to Use:** ${prompt.when_to_use}`);
     lines.push(`**Input Variables:** ${prompt.input_variables.map((v) => `{{${v}}}`).join(", ")}`);
     lines.push("**Beginner Example:**");
-    lines.push(prompt.beginner_mode || `Isi variabel dasar untuk membuat output ${category} yang ringkas dan mudah direview.`);
+    lines.push(prompt.beginner_mode);
     lines.push("**Advanced Example:**");
-    lines.push(prompt.advanced_mode || `Tambahkan batasan, tone, contoh referensi, dan format output untuk hasil ${category} yang lebih spesifik.`);
+    lines.push(prompt.advanced_mode);
     lines.push("**Full Prompt:**");
     lines.push("```");
-    lines.push(`${prompt.full_prompt}
-
-Product Context: ${seller.niche}
-Target Buyer: ${seller.audience}
-Product Strategy: ${strategy.core_promise}
-Output Requirement: Berikan hasil spesifik untuk kategori ${category}. Sertakan struktur, asumsi, hal yang perlu diverifikasi manual, dan format akhir yang mudah dicopy. Jangan membuat klaim terlarang atau jaminan hasil.`);
+    lines.push(prompt.full_prompt);
     lines.push("```");
     lines.push(`**Expected Output:** ${prompt.expected_output}`);
     lines.push("**Quality Checklist:**");
-    [
-      `Output sesuai kategori ${category}.`,
-      "Variabel input terjawab jelas.",
-      "Tidak ada klaim jaminan income, sales, viral, approval, atau hasil pasti.",
-      "Ada catatan apa yang perlu diverifikasi manual.",
-      "Bahasa sesuai target buyer dan tone produk.",
-    ].forEach((item) => lines.push(`- [ ] ${item}`));
+    prompt.quality_checklist.forEach((item) => lines.push(`- [ ] ${item}`));
     lines.push("**Common Mistakes:**");
-    [
-      "Input terlalu umum sehingga output generik.",
-      "Tidak memberi contoh atau batasan konteks.",
-      "Langsung memakai output tanpa review manual.",
-    ].forEach((item) => lines.push(`- ${item}`));
-    lines.push(`**Manual Verification Note:** Review fakta, angka, sumber, klaim performa, dan kesesuaian dengan konteks buyer sebelum output digunakan.`);
+    prompt.common_mistakes.forEach((item) => lines.push(`- ${item}`));
+    lines.push(`**Manual Verification Note:** Review fakta, angka, dokumen, sumber, dan klaim sebelum output dipakai.`);
     lines.push(`**Safe Use Note:** ${prompt.safe_use_note}`);
     lines.push("");
   });
-  return lines.join("
-");
+  return lines.join("\n");
 }
 
 function promptLibraryCsv(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const { strategy } = currentStrategy(seller, adapter);
-  const prompts = buildPromptLibrary(adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
+  const prompts = buildIntentPromptLibrary(seller, adapter);
   const escape = (value: string) => `"${String(value || "").replace(/"/g, '""')}"`;
   return [
     "id,title,prompt,variables,sample_input,notes",
     ...prompts.map((p, i) => {
-      const category = strategy.prompt_categories[i % strategy.prompt_categories.length] || p.category;
-      const full = `${p.full_prompt}
-
-Output must focus on ${category}. Include manual verification notes and avoid guaranteed claims.`;
       const vars = p.input_variables.map((v) => `{{${v}}}`).join(" | ");
-      const sample = `${p.input_variables[0] || "topic"}: ${seller.niche}; audience: ${seller.audience}; goal: ${category}; tone: ${seller.tone}`;
-      const notes = `Use for ${category}. Review manually before publishing or client use.`;
-      return [i + 1, escape(`${category} — ${p.title}`), escape(full), escape(vars), escape(sample), escape(notes)].join(",");
+      const notes = `${p.use_case}. ${p.safe_use_note}`;
+      return [i + 1, escape(p.title), escape(p.full_prompt), escape(vars), escape(p.example_filled_input), escape(notes)].join(",");
     }),
-  ].join("
-");
+  ].join("\n");
 }
 
 function usageGuide(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
@@ -1235,383 +1248,94 @@ function usageGuide(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdap
 }
 
 function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const intro = [
-    `# Sample Input & Output — ${seller.brand}`,
-    "",
-    "File ini berisi contoh konkret. Semua contoh tetap synthetic dan harus direview manual sebelum dipakai/dijual.",
-    "",
-  ];
-
-  if (adapter === "ACADEMIC_WRITING" && isAcademicCaseReportNiche(seller.niche)) {
+  const { intent, strategy } = currentStrategy(seller, adapter);
+  if (intent.intent === "DUE_DILIGENCE_SYSTEM") {
     return [
-      ...intro,
-      "## Sample 1: Clinical Case Report Background / Latar Belakang",
-      "**Sample User Input:**",
-      "```",
-      "case_topic: Tuberkulosis paru pada pasien dewasa dengan ketidakpatuhan minum obat; setting: Puskesmas; assignment_type: laporan kasus klinis; citation_style: APA 7; sources: hanya sumber yang diberikan pengguna; patient_data: gunakan data kasus yang sudah dianonimkan",
-      "```",
-      "**Example AI Output:**",
-      "```",
-      "Draft Latar Belakang: Tuberkulosis paru masih menjadi masalah kesehatan masyarakat yang memerlukan penanganan berkelanjutan, terutama pada pasien dengan risiko ketidakpatuhan pengobatan. Dalam konteks pelayanan primer, laporan kasus dapat membantu menggambarkan hubungan antara faktor klinis, perilaku kesehatan, edukasi pasien, dan rencana monitoring. Bagian ini perlu menekankan urgensi kasus berdasarkan sumber yang benar-benar diberikan pengguna, bukan membuat angka epidemiologi, DOI, atau klaim klinis baru.",
-      "Citation Guard: Tulis [SISIPKAN SUMBER TERVERIFIKASI] jika sumber belum tersedia. Jangan mengarang nama jurnal, tahun, DOI, atau guideline.",
-      "Clinical Safety Note: Draft ini tidak menggantikan diagnosis dokter, keputusan terapi, atau arahan pembimbing klinik.",
-      "```",
+      `# Sample Input & Output — ${seller.brand}`,
       "",
-      "## Sample 2: Case Discussion / Pembahasan Klinis Berbasis Bukti",
-      "**Sample User Input:**",
-      "```",
-      "diagnosis: CKD dengan edema anasarka; clinical_findings: edema pretibia, sesak, penurunan albumin; nursing_focus: monitoring cairan dan edukasi diet; source_list: buku ajar + guideline yang diberikan pengguna; limitation: data lab tidak lengkap",
-      "```",
-      "**Example AI Output:**",
-      "```",
-      "Pembahasan Draft: Temuan edema anasarka pada pasien CKD dapat dibahas sebagai manifestasi gangguan keseimbangan cairan yang perlu dinilai bersama data klinis dan pemeriksaan penunjang. Pada bagian pembahasan, hubungkan temuan fisik, kemungkinan mekanisme, intervensi keperawatan, dan edukasi pasien secara hati-hati. Karena data laboratorium belum lengkap, tuliskan keterbatasan: 'Interpretasi ini bersifat terbatas dan memerlukan verifikasi dengan data pemeriksaan penunjang serta arahan klinis pembimbing.'",
-      "Evidence Guard: Jangan menyatakan hubungan kausal atau rekomendasi terapi spesifik jika sumber dan data pasien belum lengkap.",
-      "```",
+      "Contoh ini synthetic dan hanya untuk latihan struktur. Buyer wajib memverifikasi semua angka, dokumen, dan temuan dengan sumber nyata.",
       "",
-      "## Sample 3: Citation Ethics & No Fake DOI Checker",
+      "## Sample 1: Seller Interview Question Builder",
       "**Sample User Input:**",
       "```",
-      "claim: edukasi pasien meningkatkan kepatuhan terapi TB; sources: belum diberikan; requested_output: paragraf tinjauan pustaka dengan sitasi APA 7",
+      "target_bisnis: laundry kiloan aktif 3 tahun; tujuan_akuisisi: membeli usaha berjalan; data_yang_dimiliki: omzet klaim 35 juta/bulan, 5 mesin, kontrak sewa sisa 1 tahun; risiko_yang_dicemaskan: pelanggan menurun dan mesin sering rusak; format_output: daftar pertanyaan wawancara + red flag",
       "```",
       "**Example AI Output:**",
       "```",
-      "Status: HOLD. Klaim belum boleh ditulis sebagai fakta akademik karena sumber belum diberikan. Output aman yang boleh dibuat: 'Edukasi pasien sering dibahas sebagai salah satu komponen dukungan kepatuhan terapi, namun pernyataan ini perlu didukung oleh sumber yang terverifikasi.'",
-      "Action Required: Minta pengguna menambahkan minimal 2 sumber valid. Setelah sumber tersedia, bantu ringkas argumen tanpa mengubah makna dan tanpa membuat DOI palsu.",
-      "Academic Integrity Note: Jangan membuat referensi, DOI, nama penulis, tahun, data pasien, atau guideline yang tidak diberikan pengguna.",
+      "Daftar Pertanyaan Wawancara:\n1. Berapa omzet bulanan 12 bulan terakhir dan bukti transaksinya apa?\n2. Berapa persentase pelanggan repeat dan bagaimana cara mencatatnya?\n3. Apakah ada hutang usaha, cicilan mesin, atau kewajiban supplier?\n4. Bagaimana status sewa tempat dan opsi perpanjangannya?\n5. Mesin mana yang paling sering rusak dan kapan terakhir servis?\n\nRed Flag Awal:\n- Seller tidak bisa menunjukkan bukti transaksi.\n- Kontrak sewa hampir habis tanpa kepastian perpanjangan.\n- Tidak ada catatan pelanggan atau komplain.\n\nVerifikasi Manual:\nMinta laporan transaksi, bukti pembayaran sewa, catatan servis mesin, dan wawancara minimal 2 pelanggan tetap.",
       "```",
+      "**Review Note:** Ini bukan keputusan membeli. Gunakan sebagai daftar tanya awal dan validasi dengan dokumen nyata.",
       "",
-      "## Sample 4: Patient Education Draft / Edukasi Pasien",
+      "## Sample 2: Revenue Verification Checklist",
       "**Sample User Input:**",
       "```",
-      "case: pasien DM tipe 2; education_goal: kepatuhan diet dan kontrol gula darah; language_level: mudah dipahami pasien; forbidden: jangan beri dosis obat; output_format: poin edukasi + teach-back question",
+      "target_bisnis: kedai kopi kecil; data_yang_dimiliki: klaim omzet, daftar menu, biaya sewa, gaji barista; risiko_yang_dicemaskan: omzet hanya naik saat event; format_output: checklist validasi omzet",
       "```",
       "**Example AI Output:**",
       "```",
-      "Poin Edukasi: 1) Jelaskan pentingnya makan teratur sesuai anjuran tenaga kesehatan. 2) Dorong pasien mencatat pola makan dan gejala yang dirasakan. 3) Anjurkan kontrol sesuai jadwal dan membawa catatan gula darah jika tersedia. 4) Hindari memberi dosis obat baru; arahkan pasien berkonsultasi dengan tenaga kesehatan.",
-      "Teach-back Question: 'Bisa Ibu/Bapak jelaskan kembali kapan harus kontrol dan apa yang perlu dicatat di rumah?'",
-      "Safety Note: Edukasi ini bersifat umum dan harus disesuaikan oleh tenaga kesehatan/pembimbing klinik.",
+      "Checklist Validasi Omzet:\n- Cocokkan klaim omzet dengan mutasi rekening, POS, nota, atau buku kas.\n- Pisahkan penjualan normal, event, promo, dan pesanan besar satu kali.\n- Hitung rata-rata harian dan variasi weekday/weekend.\n- Cek gross margin per menu utama.\n- Tanyakan periode penurunan paling besar dan penyebabnya.\n\nPertanyaan Lanjutan:\n1. Apakah owner mengambil kas tanpa pencatatan?\n2. Apakah ada pembayaran supplier tertunda?\n3. Apakah pelanggan utama berasal dari lokasi, komunitas, atau promo berbayar?\n\nCatatan Aman: Angka harus diverifikasi. Jangan memakai klaim omzet sebagai fakta tanpa dokumen pendukung.",
       "```",
-    ].join("\n") + "\n";
+      "**Review Note:** Gunakan untuk mengarahkan audit ringan. Untuk transaksi material, libatkan akuntan/konsultan.",
+      "",
+      "## Sample 3: Risk Summary Report",
+      "**Sample User Input:**",
+      "```",
+      "target_bisnis: toko frozen food; data_yang_dimiliki: supplier list, omzet 6 bulan, stok, kontrak ruko; risiko_yang_dicemaskan: ketergantungan supplier dan stok expired; format_output: ringkasan risiko prioritas",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Ringkasan Risiko Prioritas:\nHigh: Ketergantungan pada 1 supplier utama tanpa kontrak tertulis.\nMedium: Sistem stok belum mencatat expiry date per batch.\nMedium: Omzet 6 bulan belum dipisah antara retail dan reseller.\nLow: Branding toko belum konsisten, tetapi bukan risiko akuisisi utama.\n\nDokumen yang Perlu Diminta:\n- Purchase order/invoice supplier 6-12 bulan.\n- Catatan stok dan barang expired.\n- Daftar reseller aktif dan kontribusi omzet.\n- Kontrak ruko dan biaya operasional tetap.\n\nKeputusan yang Belum Bisa Diambil:\nBelum cukup data untuk menyimpulkan kelayakan pembelian. Perlu validasi dokumen dan proyeksi arus kas konservatif.",
+      "```",
+      "**Review Note:** Hindari kesimpulan final. Output ini hanya ringkasan awal untuk diskusi dan validasi lanjut.",
+    ].join("\n");
   }
 
-  const blocks: Record<ResolvedAdapter, string[]> = {
-    TEXT_TO_IMAGE: [
-      "## Sample 1: Product Image Prompt",
-      "**Sample User Input:**",
-      "```\nproduct: tas batik handmade; material: kain batik katun; background: beige linen; lighting: soft window light; aspect_ratio: 4:5; platform: Shopee thumbnail\n```",
-      "**Example AI Output:**",
-      "```\nFinal Image Prompt: Premium product photography of a handmade batik tote bag made from cotton batik fabric, indigo and cream pattern, placed on warm beige linen background, soft natural window light from upper left, 50mm lens, shallow depth of field, realistic fabric texture, clean marketplace composition with 40% negative space, 4:5 aspect ratio, high detail, professional e-commerce look.\nNegative Prompt: blurry, watermark, distorted text, low resolution, oversaturated colors, plastic texture, messy background, harsh shadows.\nUse Case: Shopee/Tokopedia product thumbnail.\n```",
-      "**Review Note:** Pastikan visual tidak memakai logo/karakter pihak ketiga dan warna produk tidak menyesatkan buyer.",
-      "",
-      "## Sample 2: Social Media Visual Prompt",
-      "**Sample User Input:**",
-      "```\nproduct: digital planner; style: clean premium; background: desk setup; lighting: morning light; aspect_ratio: 1:1\n```",
-      "**Example AI Output:**",
-      "```\nFinal Image Prompt: Clean premium flat-lay of a digital planner displayed on a tablet, minimalist desk setup with neutral stationery, soft morning light, subtle shadows, calm productivity mood, high-resolution commercial stock style, centered composition, 1:1 square aspect ratio for Instagram feed.\nNegative Prompt: clutter, watermark, unreadable text, distorted screen, oversaturated color, low quality.\n```",
-      "",
-      "## Sample 3: Negative Prompt Optimizer",
-      "**Sample User Input:**",
-      "```\nproblem: generated product image has messy background and wrong fabric texture\n```",
-      "**Example AI Output:**",
-      "```\nOptimized Negative Prompt: messy background, unrealistic fabric, plastic texture, extra seams, distorted pattern, blurry edges, watermark, text artifact, overexposed highlights, harsh shadow, low resolution.\n```",
-    ],
-    IMAGE_EDITING: [
-      "## Sample 1: Product Retouch Brief",
-      "**Sample User Input:**",
-      "```\nimage_condition: foto produk gelap dan background ramai; object_to_keep: botol produk; background_target: putih bersih; crop_ratio: 4:5\n```",
-      "**Example AI Output:**",
-      "```\nEditing Brief: Pertahankan bentuk botol, label, warna asli, dan refleksi natural. Hapus objek distraksi di belakang produk. Ganti background menjadi putih bersih dengan shadow tipis di bawah botol. Naikkan exposure +12%, kurangi highlight berlebih pada label, koreksi white balance agar warna produk tetap akurat. Crop 4:5 untuk marketplace thumbnail. Export JPG 3000px, quality high.\n```",
-      "**Review Note:** Jangan mengubah bentuk label atau klaim visual produk.",
-      "",
-      "## Sample 2: Background Replacement",
-      "**Sample User Input:**",
-      "```\nbackground_target: beige premium; cleanup_area: debu dan bayangan keras; export_format: PNG/JPG\n```",
-      "**Example AI Output:**",
-      "```\nReplace background with warm beige studio backdrop. Clean dust specks around product edge, soften hard right-side shadow by 40%, keep contact shadow under product for realism, preserve original product color and texture.\n```",
-      "",
-      "## Sample 3: Marketplace Resize",
-      "**Sample User Input:**",
-      "```\ntarget: Shopee square thumbnail; product must be centered; margin: 12%\n```",
-      "**Example AI Output:**",
-      "```\nResize canvas to 1:1, center product with 12% margin on all sides, keep product occupying 76% of frame height, sharpen label slightly, export 2000x2000 JPG.\n```",
-    ],
-    TEXT_TO_VIDEO: [
-      "## Sample 1: 15-Second Product Demo",
-      "**Sample User Input:**",
-      "```\nproduct: digital planner; duration: 15s; platform: Reels; tone: premium calm; cta: download template\n```",
-      "**Example AI Output:**",
-      "```\n0–3s Hook: Close-up tablet screen, planner page opens smoothly. Text overlay: 'Kerjaan numpuk tapi jadwal berantakan?' Camera: slow push-in.\n3–7s Problem: Quick cuts of sticky notes and missed deadlines. Transition: swipe blur.\n7–12s Solution: Show planner sections: weekly goals, task priority, habit tracker. Camera: top-down with smooth pan. Voiceover: 'Rapikan minggu kamu dalam satu dashboard.'\n12–15s CTA: Show clean final layout. Text overlay: 'Download template & mulai hari ini.'\n```",
-      "",
-      "## Sample 2: Shot List",
-      "**Sample User Input:**",
-      "```\nproduct demo for skincare bottle, 20 seconds, TikTok\n```",
-      "**Example AI Output:**",
-      "```\nShot 1 macro label 2s, Shot 2 product in hand 3s, Shot 3 texture close-up 4s, Shot 4 application scene 5s, Shot 5 shelf hero shot 3s, Shot 6 CTA frame 3s. Movement: slow orbit, push-in, top-down.\n```",
-      "",
-      "## Sample 3: CTA Ending",
-      "**Sample User Input:**",
-      "```\ncta: soft sell, no pressure\n```",
-      "**Example AI Output:**",
-      "```\nEnd frame: product centered, calm background, text overlay 'Coba lihat detailnya dulu', voiceover 'Kalau cocok dengan rutinitasmu, link ada di bio.'\n```",
-    ],
-    ACADEMIC_WRITING: [
-      "## Sample 1: Research Gap Draft",
-      "**Sample User Input:**",
-      `\`\`\`\ntopic: ${seller.niche}; assignment_type: academic paper/case report; citation_style: APA 7; sources: user-provided only\n\`\`\``,
-      "**Example AI Output:**",
-      "```\nDraft Gap: Topik perlu ditempatkan dalam konteks akademik yang jelas: masalah utama, keterbatasan studi terdahulu, konteks populasi, dan alasan penelitian/penulisan dilakukan. Jika sumber belum diberikan, tulis [SISIPKAN SUMBER TERVERIFIKASI] dan jangan membuat sitasi atau DOI baru.\nIntegrity Note: semua sumber, angka, dan klaim harus diverifikasi manual.\n```",
-      "",
-      "## Sample 2: Methodology Structure",
-      "**Sample User Input:**",
-      "```\nmethod: literature review / case report / qualitative; data: user-provided only; limitation: source availability\n```",
-      "**Example AI Output:**",
-      "```\nMetode ditulis dengan menjelaskan desain, sumber data, kriteria pemilihan sumber/kasus, langkah analisis, dan batasan. Hindari membuat data, instrumen, atau hasil yang belum diberikan pengguna.\nIntegrity Note: angka hasil uji tidak boleh dibuat jika data belum tersedia.\n```",
-      "",
-      "## Sample 3: Citation Ethics Checker",
-      "**Sample User Input:**",
-      "```\nclaim: intervention improves outcome; sources: not provided\n```",
-      "**Example AI Output:**",
-      "```\nStatus: HOLD. Klaim belum boleh ditulis sebagai fakta karena sumber belum diberikan. Minta pengguna memberikan artikel/jurnal/guideline valid atau tulis klaim sebagai dugaan awal yang perlu diverifikasi.\n```",
-    ],
-    RESEARCH: [
-      "## Sample 1: Research Question Framing",
-      "**Sample User Input:**",
-      "```\ntopic: perilaku pembeli produk digital prompt; audience: seller Indonesia; method: interview + survey\n```",
-      "**Example AI Output:**",
-      "```\nRQ1: Faktor apa yang memengaruhi keputusan seller Indonesia membeli prompt pack digital?\nRQ2: Bagaimana seller menilai kualitas prompt pack sebelum membeli?\nMethod: mixed exploratory; 8–12 wawancara semi-terstruktur untuk eksplorasi tema, dilanjutkan survey untuk validasi pola awal.\nLimitation: temuan tidak boleh digeneralisasi tanpa sampel memadai.\n```",
-      "",
-      "## Sample 2: Interview Guide",
-      "**Sample User Input:**",
-      "```\nrespondent_profile: seller digital product pemula\n```",
-      "**Example AI Output:**",
-      "```\nQuestions: 1) Produk digital apa yang pernah Anda beli? 2) Apa sinyal kualitas sebelum membeli? 3) Apa yang membuat Anda tidak percaya pada listing? 4) Format file apa yang paling mudah dipakai? 5) Bagian apa yang membuat prompt pack terasa premium?\n```",
-      "",
-      "## Sample 3: Source Triangulation",
-      "**Sample User Input:**",
-      "```\nsources: marketplace listing, user interview, competitor page\n```",
-      "**Example AI Output:**",
-      "```\nTriangulation Plan: bandingkan klaim listing dengan bahasa buyer saat wawancara dan struktur produk kompetitor. Tandai insight sebagai strong hanya jika muncul di minimal dua sumber berbeda.\n```",
-    ],
-    CONTENT_CREATION: [
-      "## Sample 1: Hook + Caption",
-      "**Sample User Input:**",
-      "```\nplatform: Instagram; niche: prompt pack untuk UMKM; goal: edukasi + soft selling; tone: friendly\n```",
-      "**Example AI Output:**",
-      "```\nHook: 'Prompt kamu bukan jelek — mungkin konteksnya kurang lengkap.'\nCaption: Banyak UMKM pakai AI untuk bikin caption, katalog, atau ide konten. Masalahnya, prompt yang terlalu pendek sering bikin output generik. Coba mulai dari 4 bagian: role, konteks, target audiens, dan format output. Save post ini kalau kamu sering stuck bikin prompt.\nCTA: Mau template prompt yang tinggal edit? Cek link di bio.\n```",
-      "",
-      "## Sample 2: Carousel Outline",
-      "**Sample User Input:**",
-      "```\ntopic: 5 kesalahan prompt pemula\n```",
-      "**Example AI Output:**",
-      "```\nSlide 1: 5 Kesalahan Prompt Pemula. Slide 2: Tidak memberi role. Slide 3: Tidak menjelaskan audiens. Slide 4: Tidak menentukan format output. Slide 5: Tidak memberi contoh. Slide 6: Tidak melakukan review. Slide 7: CTA: simpan checklist ini.\n```",
-      "",
-      "## Sample 3: Content Calendar",
-      "**Sample User Input:**",
-      "```\nfrequency: 3 posts/week; goal: awareness + trust\n```",
-      "**Example AI Output:**",
-      "```\nWeek Plan: Senin edukasi, Rabu behind-the-scenes, Jumat soft selling. Setiap post punya hook, value, example, CTA save/share. Tidak ada klaim viral/FYP.\n```",
-    ],
-    BUSINESS_MARKETING: [
-      "## Sample 1: Positioning Statement",
-      "**Sample User Input:**",
-      "```\noffer: prompt pack untuk seller UMKM; audience: pemilik toko online; pain: output AI generik; price: Rp79.000\n```",
-      "**Example AI Output:**",
-      "```\nPositioning: Untuk pemilik toko online yang ingin output AI lebih rapi tanpa belajar prompt engineering dari nol, paket ini menyediakan template prompt siap edit dengan contoh penggunaan dan checklist kualitas. Klaim dibatasi pada bantuan workflow, bukan jaminan penjualan.\n```",
-      "",
-      "## Sample 2: Sales Page Outline",
-      "**Sample User Input:**",
-      "```\nproduct: prompt pack; goal: explain value; tone: clear, honest\n```",
-      "**Example AI Output:**",
-      "```\nHero: Prompt lebih rapi untuk kerja harian seller. Problem: output AI sering generic. Solution: prompt pack dengan struktur input, sample output, checklist. What You Get: PromptBook, CSV, Usage Guide. Disclaimer: hasil bergantung input dan tool AI.\n```",
-      "",
-      "## Sample 3: Objection Handling",
-      "**Sample User Input:**",
-      "```\nobjection: saya bisa cari prompt gratis\n```",
-      "**Example AI Output:**",
-      "```\nResponse: Betul, prompt gratis banyak. Bedanya, paket ini disusun sebagai workflow lengkap: prompt utama, contoh input-output, checklist review, dan panduan upload manual. Jadi buyer tidak perlu merangkai dari nol.\n```",
-    ],
-    CODING_AUTOMATION: [
-      "## Sample 1: PRD Generator",
-      "**Sample User Input:**",
-      "```\nproduct_idea: inventory app for small shop; users: owner + cashier; stack: React + Supabase\n```",
-      "**Example AI Output:**",
-      "```\nPRD: Goal: membantu toko kecil mencatat stok dan transaksi. Users: owner, cashier. Core features: login, product CRUD, stock in/out, sales transaction, daily report. Non-goals: payment gateway, marketplace API. Acceptance criteria: cashier can create sale, owner can view report.\n```",
-      "",
-      "## Sample 2: Database Schema",
-      "**Sample User Input:**",
-      "```\nentities: products, transactions, users, stock_movements\n```",
-      "**Example AI Output:**",
-      "```\nTables: profiles(id,user_id,role), products(id,name,sku,price,stock), transactions(id,total,created_by), transaction_items(id,transaction_id,product_id,qty,price), stock_movements(id,product_id,type,qty,reason). Security: RLS by owner_id, cashier limited write.\n```",
-      "",
-      "## Sample 3: Deployment Checklist",
-      "**Sample User Input:**",
-      "```\nplatform: Vercel + Supabase\n```",
-      "**Example AI Output:**",
-      "```\nChecklist: env vars set, RLS tested, seed data removed, build pass, auth redirect configured, error boundary, backup plan, no secret in repo, production URL tested.\n```",
-    ],
-    EVIDENCE_HANDBOOK: [
-      "## Sample 1: Evidence Table Builder",
-      "**Sample User Input:**",
-      "```\nhandbook_topic: supplement handbook untuk creatine; reader_profile: pemula fitness; claim: creatine membantu performa latihan intensitas tinggi; source_list: [paste sumber asli yang sudah diverifikasi]; citation_style: APA 7\n```",
-      "**Example AI Output:**",
-      "```\nEvidence Table Row:\nClaim: Creatine dapat membantu performa aktivitas intensitas tinggi tertentu.\nSource Status: SOURCE PROVIDED / VERIFY ORIGINAL.\nEvidence Level: tulis level hanya setelah sumber dibaca; jika belum, gunakan [EVIDENCE LEVEL PENDING].\nPlain-Language Summary: Jelaskan secara hati-hati tanpa menyebut hasil pasti.\nLimitation: Efek dapat berbeda antar individu dan konteks latihan.\nSafety Note: Jangan memberi dosis atau rekomendasi medis tanpa sumber dan konsultasi profesional.\n```",
-      "",
-      "## Sample 2: Chapter Outline & Source Guard",
-      "**Sample User Input:**",
-      "```\ntopic: handbook suplemen untuk pemula; chapters: manfaat, cara kerja, keamanan, interaksi, FAQ; forbidden: jangan buat DOI palsu, jangan kasih dosis final\n```",
-      "**Example AI Output:**",
-      "```\nChapter 1 — Cara Membaca Klaim Suplemen: jelaskan perbedaan claim, bukti, limitasi, dan konteks penggunaan.\nChapter 2 — Evidence Table: semua klaim harus mengacu pada source log.\nChapter 3 — Safety & Contraindication: tulis risiko umum dan wajib konsultasi tenaga profesional untuk kondisi khusus.\nChapter 4 — FAQ: jawab dengan bahasa sederhana dan label [SOURCE NEEDED] untuk klaim yang belum punya sumber.\n```",
-      "",
-      "## Sample 3: No Fake Reference Checker",
-      "**Sample User Input:**",
-      "```\nclaim: suplemen X pasti meningkatkan imun; sources: belum diberikan; output_requested: paragraf handbook dengan referensi kuat\n```",
-      "**Example AI Output:**",
-      "```\nStatus: HOLD. Klaim tidak boleh ditulis sebagai fakta kuat karena sumber belum diberikan. Output aman: 'Klaim ini memerlukan verifikasi dari sumber ilmiah yang relevan. Tambahkan sumber asli sebelum menyatakan manfaat.'\nAction Required: minta sumber, cek tahun, penulis, jurnal/penerbit, DOI/URL asli jika ada, dan batasan studi.\n```",
-    ],
-    READY_TO_SELL_PRODUCT: [
-      "## Sample 1: Product ZIP to Sell-Ready Pack",
-      "**Sample User Input:**",
-      "```\nproduct_files_summary: PromptBook.md, PromptLibrary.csv, UsageGuide.md; marketplace: Gumroad + Shopee; product promise: membantu seller membuat prompt pack rapi; cover_style: premium dark editorial; cta_goal: soft launch\n```",
-      "**Example AI Output:**",
-      "```\nSell-Ready Asset Plan: 1) Buyer PDF draft memakai cover + table of contents + PromptBook + sample output + license. 2) Cover prompt dibuat 4:3 Gumroad dan 4:5 marketplace. 3) Listing berisi problem-solution-what-you-get-FAQ tanpa klaim sales. 4) CTA video 15 detik memakai product mockup + soft CTA. 5) Delivery ZIP berisi PDF, CSV, usage guide, license.\n```",
-      "",
-      "## Sample 2: Complete PDF Product Builder",
-      "**Sample User Input:**",
-      "```\npdf_structure: cover, table of contents, how to use, prompt library, sample output, checklist, license; buyer_level: beginner; output: PDF source draft\n```",
-      "**Example AI Output:**",
-      "```\nPDF Draft Structure: Cover page → Buyer promise → Quick Start → PromptBook sections → Sample Input/Output → QA Checklist → FAQ → License/Disclaimer → Final Review Checklist. Add page numbers, section dividers, and export high-quality PDF.\n```",
-      "",
-      "## Sample 3: Marketing Video CTA Prompt",
-      "**Sample User Input:**",
-      "```\nduration: 15s; platform: Gumroad preview/Reels; CTA: preview the pack; forbidden: no guaranteed sales\n```",
-      "**Example AI Output:**",
-      "```\n0–3s: show messy files becoming organized. 3–7s: show cover + PDF + CSV preview. 7–12s: show buyer workflow. 12–15s: soft CTA: Preview the pack and see if it fits your workflow. No income/sales guarantee.\n```",
-    ],
-    CUSTOM: [
-      "## Sample 1: Custom Prompt System",
-      "**Sample User Input:**",
-      `\`\`\`\nniche: ${seller.niche}; audience: ${seller.audience}; goal: create repeatable premium prompt pack; output_format: markdown + csv\n\`\`\``,
-      "**Example AI Output:**",
-      "```\nSystem Prompt: Anda adalah prompt product architect. Buat prompt pack niche yang terdiri dari 10 prompt unik, setiap prompt punya role, context, task, variables, expected output, QA checklist, common mistakes, dan safe use note. Semua klaim harus bisa diverifikasi dan tidak boleh menjanjikan hasil pasti.\n```",
-      "",
-      "## Sample 2: Anti-Generic QA",
-      "**Sample User Input:**",
-      "```\noutput: prompt pack terasa terlalu umum\n```",
-      "**Example AI Output:**",
-      "```\nFAIL: output tidak menyebut audience spesifik, use case, variabel input, format akhir, dan contoh filled input. Remediation: tambahkan 5 anchor niche, contoh input nyata, dan negative constraints.\n```",
-      "",
-      "## Sample 3: Buyer Usage Guide",
-      "**Sample User Input:**",
-      "```\nbuyer_level: pemula; product_type: prompt pack\n```",
-      "**Example AI Output:**",
-      "```\nStep 1 pilih prompt sesuai kebutuhan. Step 2 isi variable. Step 3 jalankan di AI. Step 4 review dengan checklist. Step 5 ulangi dengan konteks lebih spesifik jika output masih umum.\n```",
-    ],
-  };
-  return [...intro, ...(blocks[adapter] ?? blocks.CUSTOM)].join("\n") + "\n";
-}
-
-function qualityChecklist(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const coding = adapter === "CODING_AUTOMATION" ? [
-    "## Checklist PRD", "- [ ] Goal dan non-goal jelas", "- [ ] Minimal 5 user story", "- [ ] Acceptance criteria terukur", "- [ ] Risiko dan asumsi tercantum", "",
-    "## Checklist Database/Auth/API", "- [ ] Schema punya PK/FK dan index", "- [ ] Role dan permission matrix jelas", "- [ ] Endpoint punya input/output dan auth required", "- [ ] Validasi server-side tertulis", "",
-    "## Checklist Automation & Ops", "- [ ] Trigger workflow jelas", "- [ ] Retry/dead-letter/logging tersedia", "- [ ] Testing pre-launch, launch, post-launch lengkap", "- [ ] Rollback, backup, monitoring tercantum", "",
-  ] : [];
-  return [
-    `# Quality Checklist — ${seller.brand}`,
-    "",
-    ...coding,
-    "## Checklist Prompt Pack",
-    "- [ ] Semua prompt punya purpose, when to use, full prompt, variables, expected output, dan safe use note.",
-    "- [ ] Tidak ada prompt body duplikat.",
-    "- [ ] CSV jumlah barisnya sesuai jumlah prompt.",
-    "- [ ] Sample Input/Output minimal 3 contoh.",
-    "",
-    "## Checklist Klaim Aman",
-    ...(adapter === "EVIDENCE_HANDBOOK" ? ["- [ ] Evidence Table berisi claim, source status, evidence level, limitation, dan verification status.", "- [ ] Tidak ada DOI, studi, penulis, tahun, dosis, angka, atau guideline yang dikarang.", "- [ ] Klaim kesehatan/keuangan/hukum diberi safety disclaimer dan source verification requirement.", "- [ ] Semua bagian yang belum punya sumber diberi label [SOURCE NEEDED] atau [VERIFY ORIGINAL].", ""] : []),
-    "- [ ] Tidak menjanjikan income.",
-    "- [ ] Tidak menjamin produk laku.",
-    "- [ ] Tidak menjamin angka sales.",
-    "- [ ] Tidak mengklaim marketplace-approved atau partner resmi.",
-    "- [ ] Semua listing menyebut upload manual dan seller review required.",
-  ].join("\n");
-}
-
-function licenseDisclaimer(seller: ReturnType<typeof sellerMeta>): string {
-  return [
-    `# License & Disclaimer — ${seller.brand}`,
-    "",
-    `**License Type:** ${seller.license}`,
-    "",
-    "## Allowed Use",
-    "- Buyer boleh memakai prompt untuk proyek personal, internal, atau client sesuai lisensi yang dibeli.",
-    "- Buyer boleh mengubah prompt agar sesuai kebutuhan proyek.",
-    "- Buyer boleh memakai output AI yang dihasilkan setelah review manual.",
-    "",
-    "## Not Allowed",
-    "- Buyer tidak boleh menjual ulang prompt pack ini secara utuh/as-is sebagai produk baru.",
-    "- Buyer tidak boleh mengklaim sebagai partner resmi marketplace atau AI provider.",
-    "- Buyer tidak boleh memakai materi ini untuk membuat klaim palsu, testimoni palsu, atau validasi pasar palsu.",
-    "",
-    "## Disclaimer",
-    "Prompt ini adalah template dan heuristic. Kualitas output bergantung pada model AI, kualitas input, konteks, dan review manual. Tidak ada jaminan hasil, income, sales, approval marketplace, atau performa bisnis tertentu.",
-    "",
-    "## Marketplace Responsibility",
-    "Seller dan buyer wajib memverifikasi kebijakan marketplace, AI provider ToS, dan aturan produk digital sebelum upload/publish.",
-  ].join("\n");
-}
-
-function manualUploadGuide(marketplaces: string[]): string {
-  const targets = marketplaces.length ? marketplaces : ["marketplace pilihan"];
-  return [
-    "# Manual Upload Guide",
-    "",
-    "## Packing File",
-    "1. Pastikan semua file di 19_Marketplace_Bundle_Index.md atau 13_Ready_to_Upload_Checklist.md sudah lengkap.",
-    "2. Kompres file buyer menjadi ZIP.",
-    "3. Siapkan cover/thumbnail sesuai 11_Thumbnail_Brief.md.",
-    "4. Simpan backup file sumber sebelum upload.",
-    "",
-    "## Upload Manual ke Marketplace",
-    ...targets.map((mp) => `- **${mp}**: Login ke dashboard seller → buat produk digital/listing → upload ZIP atau link delivery → tempel draft listing → review kebijakan → publish manual.`),
-    "",
-    "## Policy Verification Reminder",
-    "Verifikasi aturan produk digital, delivery file, refund, deskripsi, kategori, dan tag di marketplace tujuan sebelum publish.",
-    "",
-    "## No Automatic Publishing",
-    "Sistem ini tidak memakai API marketplace dan tidak melakukan auto-publish. Semua upload dilakukan manual oleh seller.",
-  ].join("\n");
+  const prompts = buildIntentPromptLibrary(seller, adapter).slice(0, 3);
+  const lines = [`# Sample Input & Output — ${seller.brand}`, "", "Contoh berikut menunjukkan cara memakai prompt. Semua hasil tetap perlu direview manual.", ""];
+  prompts.forEach((p, i) => {
+    lines.push(`## Sample ${i + 1}: ${p.title}`);
+    lines.push("**Sample User Input:**");
+    lines.push("```");
+    lines.push(p.example_filled_input);
+    lines.push("```");
+    lines.push("**Example AI Output:**");
+    lines.push("```");
+    lines.push(`${p.expected_output}\n\nChecklist awal:\n- Output sesuai konteks.\n- Ada bagian yang perlu diverifikasi.\n- Tidak ada klaim hasil pasti.`);
+    lines.push("```");
+    lines.push(`**Review Note:** ${p.safe_use_note}`);
+    lines.push("");
+  });
+  return lines.join("\n");
 }
 
 function buyerFAQ(seller: ReturnType<typeof sellerMeta>): string {
-  return [
-    `# Buyer FAQ — ${seller.brand}`,
-    "",
-    "## Apa isi paket ini?",
-    `Paket berisi ${seller.prompt_count} prompt, PromptLibrary CSV, usage guide, sample input/output, testing report, quality checklist, license/disclaimer, dan panduan upload manual.`,
-    "",
-    "## Apakah cocok untuk pemula?",
-    "Ya. Setiap prompt memiliki Beginner Mode dan contoh input agar lebih mudah dipakai.",
-    "",
-    "## Apakah bisa dipakai untuk client project?",
-    `Bisa jika lisensi yang dibeli adalah ${seller.license} dan buyer tetap mereview output sebelum digunakan.`,
-    "",
-    "## Apakah ini membuat web otomatis?",
-    "Tidak. Ini adalah prompt pack untuk membantu menyusun draft, PRD, workflow, struktur, dan checklist. Bukan software auto-build.",
-    "",
-    ...(seller.niche.toLowerCase().includes("handbook") || seller.niche.toLowerCase().includes("vault") || seller.niche.toLowerCase().includes("suplemen") || seller.niche.toLowerCase().includes("supplement") ? ["## Apakah handbook ini otomatis punya referensi kuat?", "Tidak otomatis. Prompt pack ini menyediakan struktur evidence table, source log, claim checker, dan QA. Sumber asli tetap harus dimasukkan dan diverifikasi manual oleh pengguna.", ""] : []),
-    "",
-    "## Apakah perlu skill coding?",
-    "Untuk prompt teknis, pemahaman dasar web/coding membantu. Pemula bisa mulai dari Beginner Mode.",
-    "",
-    "## Bisa dipakai di ChatGPT/Gemini/Claude?",
-    "Ya, prompt berbasis teks dan dapat dipakai di tool AI populer. Output tiap model bisa berbeda.",
-    "",
-    "## Apakah ada jaminan hasil?",
-    "Tidak ada jaminan hasil, income, sales, atau approval marketplace. Review manual tetap wajib.",
-    "",
-    "## Apakah boleh dijual ulang?",
-    "Tidak boleh menjual ulang prompt pack ini secara utuh/as-is. Lihat 07_License_Disclaimer.md.",
-  ].join("\n");
+  const adapter = resolveAdapter("CUSTOM", seller.niche);
+  const { intent } = currentStrategy(seller, adapter);
+  const diligence = intent.intent === "DUE_DILIGENCE_SYSTEM";
+  const rows = diligence ? [
+    ["Apa produk ini?", "Ini adalah paket prompt dan panduan untuk membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur."],
+    ["Apakah ini nasihat hukum atau finansial?", "Tidak. Produk ini bukan nasihat hukum, pajak, investasi, atau finansial. Gunakan sebagai alat bantu riset awal dan tetap konsultasikan ke profesional bila risikonya material."],
+    ["Data apa yang perlu saya siapkan?", "Siapkan informasi bisnis target, tujuan akuisisi, dokumen yang sudah ada, pertanyaan yang ingin dijawab, serta risiko yang paling dikhawatirkan."],
+    ["Apakah produk ini bisa menentukan bisnis layak dibeli?", "Tidak. Produk ini membantu menyusun pertanyaan, checklist, dan ringkasan temuan. Keputusan akhir tetap harus berdasarkan data nyata dan penilaian profesional."],
+    ["Apakah cocok untuk pemula?", "Ya, karena setiap prompt punya beginner mode, advanced mode, contoh input, expected output, dan checklist review."],
+    ["AI tool apa yang bisa dipakai?", "Bisa digunakan di ChatGPT, Claude, Gemini, atau AI chat lain yang mendukung instruksi panjang."],
+    ["Bolehkah dipakai untuk client work?", `Ikuti batas lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya kecuali lisensi tertulis mengizinkan.`],
+    ["Bagaimana cara mengecek output AI?", "Gunakan QC_Scorecard.md untuk memeriksa fakta, asumsi, red flag, dokumen pendukung, dan klaim yang perlu diverifikasi."],
+    ["Apakah ada jaminan hasil?", "Tidak ada jaminan income, profit, akuisisi berhasil, atau keputusan bisnis bebas risiko."],
+    ["Apa yang harus dilakukan jika output terasa generik?", "Tambahkan data spesifik: jenis usaha, lokasi, omzet klaim, dokumen yang tersedia, risiko utama, dan format output yang diinginkan."],
+  ] : [
+    ["Apa produk ini?", `Ini adalah paket prompt untuk membantu buyer menjalankan workflow ${seller.niche} secara lebih terstruktur.`],
+    ["Apakah cocok untuk pemula?", "Ya. PromptBook menyediakan beginner mode, contoh input, expected output, dan checklist."],
+    ["File apa yang saya dapat?", "Product Brief, PromptBook, PromptLibrary CSV, Usage Guide, Sample Input & Output, FAQ, Product Handbook PDF, dan Buyer Output Review Checklist."],
+    ["AI tool apa yang bisa dipakai?", "ChatGPT, Claude, Gemini, atau AI chat lain yang mendukung prompt panjang."],
+    ["Bolehkah dipakai untuk client work?", `Ikuti batas lisensi: ${seller.license}.`],
+    ["Apakah ada jaminan hasil?", "Tidak. Output bergantung pada input, tool AI, konteks, dan review manual."],
+    ["Bolehkah prompt dimodifikasi?", "Boleh untuk kebutuhan pribadi atau client sesuai lisensi. Jangan jual ulang file asli tanpa izin."],
+    ["Bagaimana mengecek kualitas output?", "Gunakan QC_Scorecard.md dan sample input-output sebagai pembanding."],
+    ["Apa yang dilakukan jika output generik?", "Perjelas konteks, target audience, batasan, format output, dan contoh referensi."],
+    ["Apakah ini software otomatis?", "Tidak. Ini produk digital berupa prompt, panduan, contoh, dan checklist."],
+  ];
+  return [`# Buyer FAQ — ${seller.brand}`, "", ...rows.flatMap(([q, a]) => [`## ${q}`, a, ""])].join("\n");
 }
 
 function pricingRecommendation(seller: ReturnType<typeof sellerMeta>): string {
@@ -1780,7 +1504,7 @@ function marketingVideoCtaPrompt(seller: ReturnType<typeof sellerMeta>, adapter:
 
 function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
   const { intent, strategy } = currentStrategy(seller, adapter);
-  const prompts = buildPromptLibrary(adapter, seller.niche, Math.min(seller.prompt_count, 10), seller.audience, seller.tone);
+  const prompts = buildIntentPromptLibrary(seller, adapter).slice(0, Math.min(seller.prompt_count, 12));
   return [
     `# ${seller.brand}`,
     `## Premium Buyer Handbook / Product Playbook`,
@@ -1788,7 +1512,6 @@ function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter:
     `**Niche:** ${seller.niche}`,
     `**Audience:** ${seller.audience}`,
     `**License:** ${seller.license}`,
-    `**Detected Intent:** ${intent.intent}`,
     "",
     "---",
     "",
@@ -1796,105 +1519,59 @@ function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter:
     strategy.core_promise,
     "",
     "# Why This Product Exists",
-    `Banyak buyer ingin memakai AI untuk ${seller.niche}, tetapi hasilnya sering terlalu umum karena tidak punya urutan kerja, variabel input, contoh, dan checklist. Handbook ini dibuat agar buyer punya sistem yang bisa diikuti, bukan hanya daftar prompt mentah.`,
+    `Buyer sering ingin memakai AI untuk ${seller.niche}, tetapi hasilnya berisiko terlalu umum jika tidak ada urutan kerja, variabel input, contoh output, dan checklist validasi. Handbook ini dibuat agar buyer memiliki sistem kerja, bukan hanya daftar prompt mentah.`,
     "",
     "# Who This Is For",
-    mdList([
-      seller.audience,
-      "pemula yang ingin mengikuti workflow langkah demi langkah",
-      "pengguna advanced yang ingin menyesuaikan prompt untuk kebutuhan nyata",
-      "buyer yang membutuhkan contoh input-output sebelum menerapkan ke konteks sendiri",
-    ]),
+    mdList([seller.audience, "buyer yang ingin workflow prompt bertahap", "pengguna AI yang ingin output lebih mudah direview", "pemula maupun pengguna advanced yang tetap mau verifikasi manual"]),
     "",
     "# The Problem This Product Solves",
     strategy.target_buyer_pain,
     "",
     "# System Overview",
-    `Sistem ini terdiri dari Product Brief, PromptBook, PromptLibrary CSV, Usage Guide, Sample Input & Output, FAQ, PDF Handbook, dan Buyer Output Review Checklist. Semua bagian dirancang untuk membantu buyer bergerak dari konteks awal menuju output yang lebih siap direview.`,
+    `Paket ini terdiri dari Product Brief, PromptBook, PromptLibrary CSV, Usage Guide, Sample Input & Output, FAQ, Product Handbook, dan Buyer Output Review Checklist. Semua bagian dirancang untuk mendukung transformasi: ${strategy.buyer_transformation}.`,
     "",
     "# Buyer Transformation",
     strategy.buyer_transformation,
     "",
     "# Beginner Workflow",
-    mdList([
-      "Baca Product Brief untuk memahami tujuan produk.",
-      "Pilih satu prompt dari PromptBook.",
-      "Isi variabel dengan contoh sederhana.",
-      "Jalankan prompt dan baca hasilnya tanpa langsung memakai mentah.",
-      "Bandingkan hasil dengan Sample Input & Output.",
-      "Perbaiki input lalu jalankan ulang.",
-    ]),
+    mdList(["Baca Product Brief untuk memahami batas produk.", "Pilih prompt pertama sesuai kebutuhan.", "Isi variabel dengan data yang benar-benar dimiliki.", "Jalankan prompt di AI tool.", "Bandingkan output dengan sample.", "Review memakai QC_Scorecard sebelum memakai hasil."]),
     "",
     "# Advanced Workflow",
-    mdList([
-      "Pilih beberapa prompt yang saling berurutan.",
-      "Tambahkan constraint seperti target audience, format akhir, tone, batasan, dan contoh referensi.",
-      "Minta AI membuat 2-3 variasi output.",
-      "Gunakan checklist untuk memilih hasil terbaik.",
-      "Lakukan fact-check atau context-check sebelum dipakai.",
-    ]),
+    mdList(["Gabungkan 2-3 prompt secara berurutan.", "Tambahkan dokumen, angka, batasan, dan format output.", "Minta AI memisahkan fakta, asumsi, pertanyaan lanjutan, dan red flag.", "Buat beberapa variasi output.", "Verifikasi manual sebelum mengambil keputusan." ]),
     "",
     "# Core Prompt System",
-    ...prompts.map((p, i) => {
-      const category = strategy.prompt_categories[i % strategy.prompt_categories.length] || p.category;
-      return [`## Prompt ${i + 1}: ${category}`, `**Purpose:** ${p.purpose}`, `**When to Use:** ${p.when_to_use}`, "**Prompt Structure:**", "```", `${p.full_prompt}
-
-Focus on ${category}. Include output format, assumptions, manual verification notes, and safe-use limitations.`, "```", `**Expected Output:** ${p.expected_output}`, ""].join("
-");
-    }),
+    ...prompts.flatMap((p, i) => [`## ${i + 1}. ${p.title}`, `**Purpose:** ${p.purpose}`, `**Variables:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`, "**Full Prompt:**", "```", p.full_prompt, "```", `**Expected Output:** ${p.expected_output}`, ""]),
     "# Example 1: Beginner Filled Input and Output",
-    "```text",
-    `Input: Saya ingin memakai ${seller.brand} untuk ${seller.niche}. Audience saya ${seller.audience}. Tujuan saya membuat output awal yang rapi dan mudah direview.`,
     "```",
-    "```text",
-    "Example AI Output: Draft awal berupa struktur kerja, poin penting, risiko yang perlu dicek, dan format final. Output ini belum final dan harus direvisi sesuai konteks buyer.",
+    prompts[0]?.example_filled_input || `konteks: ${seller.niche}; tujuan: review awal`,
     "```",
+    "Output yang baik harus memisahkan ringkasan, checklist, pertanyaan lanjutan, asumsi, dan hal yang perlu diverifikasi manual.",
     "",
     "# Example 2: Advanced Filled Input and Output",
-    "```text",
-    `Input: Buat output untuk ${seller.niche} dengan tone ${seller.tone}, format tabel, 3 variasi, catatan validasi, dan hal yang tidak boleh diklaim.`,
     "```",
-    "```text",
-    "Example AI Output: Tiga variasi output dengan perbedaan angle, tabel perbandingan, rekomendasi revisi, dan daftar hal yang perlu diverifikasi manual sebelum dipakai.",
+    prompts[1]?.example_filled_input || `konteks: ${seller.niche}; batasan: hindari klaim hasil pasti; format_output: tabel`,
     "```",
+    "Output advanced sebaiknya memberi prioritas risiko, bukti yang perlu diminta, dan catatan keterbatasan analisis.",
     "",
     "# How to Evaluate AI Output",
-    mdList([
-      "Cek apakah output sesuai tujuan prompt.",
-      "Cek apakah bahasa sesuai audiens.",
-      "Cek apakah ada fakta, angka, sumber, atau klaim yang perlu diverifikasi.",
-      "Cek apakah output terlalu umum dan perlu ditambah konteks.",
-      "Cek apakah ada klaim berlebihan yang harus dihapus.",
-    ]),
+    mdList(["Cek apakah output menjawab tujuan prompt.", "Pisahkan fakta dan asumsi.", "Tandai klaim angka, dokumen, sumber, atau risiko yang perlu diverifikasi.", "Hapus klaim yang terlalu pasti.", "Lakukan review manusia sebelum output dipakai."]),
     "",
     "# Common Mistakes",
-    mdList([
-      "Menggunakan input terlalu pendek.",
-      "Meminta AI membuat hasil pasti atau jaminan performa.",
-      "Tidak menyebut target audience.",
-      "Tidak menentukan format output.",
-      "Memakai hasil AI tanpa edit dan review manual.",
-    ]),
+    mdList(["Input terlalu umum.", "Meminta AI mengambil keputusan final.", "Menganggap output AI sebagai fakta tanpa bukti.", "Tidak menyertakan batasan.", "Tidak melakukan review manual."]),
     "",
     "# Buyer Quality Checklist",
-    mdList([
-      "Input sudah jelas dan lengkap.",
-      "Output punya struktur dan bisa dipahami.",
-      "Tidak ada klaim guaranteed income, guaranteed sales, pasti viral, atau marketplace approved.",
-      "Contoh, angka, sumber, dan fakta sudah diverifikasi manual.",
-      "Output sudah disesuaikan dengan konteks buyer.",
-    ]),
+    mdList(["Input sudah spesifik.", "Output punya struktur jelas.", "Tidak ada klaim jaminan hasil.", "Ada daftar hal yang perlu diverifikasi.", "Ada catatan batasan penggunaan."]),
     "",
     "# FAQ",
-    "Gunakan Buyer FAQ untuk menjawab pertanyaan umum terkait penggunaan, lisensi, modifikasi prompt, dan batasan hasil.",
+    "Lihat 09_Buyer_FAQ.md untuk pertanyaan buyer. Intinya, produk ini adalah alat bantu prompt dan workflow, bukan software otomatis dan bukan pengganti review profesional.",
     "",
     "# License and Safe Usage",
-    `Lisensi: ${seller.license}. Produk membantu menyusun workflow dan output draft. Buyer bertanggung jawab melakukan review, verifikasi, dan penyesuaian sebelum penggunaan akhir.`,
+    `Lisensi: ${seller.license}. Gunakan sesuai batas lisensi. Jangan menjual ulang file asli tanpa izin tertulis.`,
+    ...strategy.risk_notes.map((note) => `- ${note}`),
     "",
     "# Final Notes",
-    "Produk ini bernilai paling tinggi ketika buyer menggunakannya sebagai sistem: input yang jelas, prompt yang tepat, output yang direview, lalu revisi manual. Jangan menganggap AI output sebagai hasil final tanpa pengecekan.",
-  ].join("
-");
+    `Gunakan handbook ini sebagai sistem kerja untuk ${seller.niche}. Hasil terbaik muncul ketika buyer memberi konteks nyata, mengecek output, dan melakukan validasi manual.`,
+  ].join("\n");
 }
 
 function marketplaceUploadAssetKit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
@@ -2012,44 +1689,25 @@ function qcScorecardTemplate(seller: ReturnType<typeof sellerMeta>, qc?: QCResul
   return [
     `# Buyer Output Review Checklist — ${seller.brand}`,
     "",
-    "Checklist ini untuk buyer. Isinya bukan internal approval report, bukan failed-check report, dan bukan materi seller.",
+    "Checklist ini untuk pembeli agar output AI tidak langsung dipakai mentah. Ini bukan laporan internal seller.",
     "",
-    "## 1. Input Completeness Checklist",
-    "- [ ] Saya sudah mengisi target audience dengan jelas.",
-    "- [ ] Saya sudah mengisi konteks produk/proyek yang spesifik.",
-    "- [ ] Saya sudah menentukan format output yang diinginkan.",
-    "- [ ] Saya sudah menambahkan batasan, tone, dan contoh referensi jika perlu.",
+    "## 1. Input Completeness",
+    mdList(["Tujuan penggunaan sudah jelas.", "Konteks/niche sudah spesifik.", "Target audience disebutkan.", "Batasan dan format output ditulis.", "Data sensitif atau rahasia tidak dimasukkan sembarangan."]),
     "",
-    "## 2. Output Clarity Checklist",
-    "- [ ] Output mudah dipahami.",
-    "- [ ] Output sesuai tujuan prompt.",
-    "- [ ] Output punya struktur yang bisa diedit atau digunakan ulang.",
-    "- [ ] Output tidak terlalu umum atau template kosong.",
+    "## 2. Output Clarity",
+    mdList(["Output menjawab tujuan prompt.", "Struktur mudah dibaca.", "Ada pemisahan fakta, asumsi, dan saran.", "Ada langkah lanjut yang jelas.", "Bahasa sesuai kebutuhan buyer."]),
     "",
     "## 3. Fact-Check Checklist",
-    "- [ ] Semua angka, data, sumber, kutipan, atau klaim sudah diverifikasi manual.",
-    "- [ ] Tidak ada sumber, DOI, testimoni, review, atau data yang dibuat-buat.",
-    "- [ ] Bagian yang belum punya bukti diberi catatan untuk dicek ulang.",
+    mdList(["Angka, sumber, dokumen, dan klaim sudah diverifikasi.", "AI tidak mengarang data atau sumber.", "Klaim yang belum terbukti diberi label asumsi.", "Hasil penting dicek ulang dengan sumber asli."]),
     "",
     "## 4. No Overclaim Checklist",
-    "- [ ] Tidak ada klaim guaranteed income, guaranteed sales, pasti viral, pasti FYP, marketplace approved, atau official partner.",
-    "- [ ] Manfaat ditulis dengan kata aman seperti membantu, mempermudah, mendukung, dan lebih terstruktur.",
+    mdList(["Tidak ada jaminan income, sales, viral, approval, profit, atau hasil tertentu.", "Tidak ada nasihat hukum/finansial/medis final jika bukan dari profesional.", "Tidak ada klaim palsu seperti testimonial, review, atau angka buyer fiktif."]),
     "",
     "## 5. Revision Checklist",
-    "- [ ] Saya sudah merevisi output agar cocok dengan konteks saya.",
-    "- [ ] Saya sudah menghapus bagian yang tidak relevan.",
-    "- [ ] Saya sudah menjalankan ulang prompt jika output pertama masih terlalu umum.",
+    mdList(["Perbaiki input jika output generik.", "Minta AI membuat versi yang lebih spesifik.", "Tambahkan konteks, contoh, batasan, dan format.", "Simpan versi final setelah review manual."]),
     "",
-    "## 6. Safe Use Note",
-    "Produk ini membantu membuat draft dan struktur kerja. Hasil akhir tetap perlu diedit, dicek, dan divalidasi manual oleh buyer.",
-  ].join("
-");
-}
-
-export function generateSyncedManifestContent(args: { seller: SellerMeta; adapter?: string; marketplaces: string[]; qc: QCResult }): string {
-  const seller = sellerMeta(args.seller);
-  const adapter = resolveAdapter(args.adapter ?? "CUSTOM", seller.niche);
-  return productManifestJson(seller, adapter, args.marketplaces, args.qc);
+    qc ? `Technical QC snapshot seller/internal: ${qc.score}/100. Jangan tampilkan ini sebagai klaim kualitas kepada buyer.` : "",
+  ].filter(Boolean).join("\n");
 }
 
 export function generateActualQCScorecardContent(args: { seller: SellerMeta; qc: QCResult }): string {
