@@ -56,6 +56,22 @@ function loadDraft(): DraftShape {
   } catch { return DEFAULT_DRAFT; }
 }
 
+function resolveOutputLanguage(targetMarket: string, selectedLanguage: string) {
+  if (targetMarket === "Global") return "English";
+  if (targetMarket === "Indonesia + Global") return "Bilingual";
+  return selectedLanguage || "Indonesia";
+}
+
+function outputLanguageNote(targetMarket: string) {
+  if (targetMarket === "Global") return "Target market Global akan otomatis memakai English output.";
+  if (targetMarket === "Indonesia + Global") return "Target market Indonesia + Global akan otomatis memakai Bilingual output.";
+  return "Target market Indonesia memakai bahasa yang dipilih. Default: Indonesia.";
+}
+
+function isLanguageLockedByMarket(targetMarket: string) {
+  return targetMarket === "Global" || targetMarket === "Indonesia + Global";
+}
+
 export default function NewRun() {
   const nav = useNavigate();
   const initial = useRef<DraftShape>(loadDraft()).current;
@@ -118,6 +134,8 @@ export default function NewRun() {
   const anchorsOk = currentAnchors.length >= 3 || (form.niche.trim() && form.audience.trim() && form.description.trim());
   const isCustomTone = form.tone === "Custom";
   const effectiveTone = isCustomTone ? form.custom_tone.trim() : form.tone;
+  const resolvedLanguage = resolveOutputLanguage(form.target_market, form.language);
+  const languageLocked = isLanguageLockedByMarket(form.target_market);
 
   const checklist = [
     { label: "Jenis produk dipilih", ok: !!adapter },
@@ -142,7 +160,7 @@ export default function NewRun() {
       const run = await createRun({
         adapter: adapter as string,
         brand: form.brand,
-        language: form.language,
+        language: resolvedLanguage,
         target_market: form.target_market,
         niche: form.niche,
         audience: form.audience,
@@ -232,14 +250,23 @@ export default function NewRun() {
                 <Input value={form.brand} onChange={(e) => update("brand", e.target.value)} placeholder="contoh: Assetflow" />
                 <p className="text-xs text-muted-foreground mt-1">Isi nama brand/seller saja. Contoh: Assetflow. Jangan isi niche produk di sini.</p>
               </div>
-              <div><Label>Bahasa Output</Label>
-                <Select value={form.language} onValueChange={(v) => update("language", v)}>
+              <div>
+                <Label>Output Language</Label>
+                <Select value={resolvedLanguage} onValueChange={(v) => update("language", v)} disabled={languageLocked}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{LANGUAGES.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {outputLanguageNote(form.target_market)} Current output: <b>{resolvedLanguage}</b>.
+                </p>
               </div>
               <div><Label>Negara / Target Market</Label>
-                <Select value={form.target_market} onValueChange={(v) => update("target_market", v)}>
+                <Select value={form.target_market} onValueChange={(v) => {
+                  const nextLanguage = resolveOutputLanguage(v, form.language);
+                  setForm((f) => ({ ...f, target_market: v, language: nextLanguage }));
+                  if (v === "Global") toast.info("Target market Global dipakai sebagai English output.");
+                  if (v === "Indonesia + Global") toast.info("Target market Indonesia + Global dipakai sebagai Bilingual output.");
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>{TARGET_MARKETS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                 </Select>
@@ -397,7 +424,7 @@ export default function NewRun() {
           <CardContent className="space-y-3 text-sm">
             <div><b>Adapter:</b> {adapterLabel} <span className="text-muted-foreground">({adapter})</span></div>
             <div><b>Brand:</b> {form.brand}</div>
-            <div><b>Bahasa / Market:</b> {form.language} • {form.target_market}</div>
+            <div><b>Output Language / Market:</b> {resolvedLanguage} • {form.target_market}</div>
             <div><b>Niche:</b> {form.niche}</div>
             <div><b>Audiens:</b> {form.audience}</div>
             <div><b>Tone / Jumlah Prompt / Lisensi:</b> {effectiveTone || form.tone} • {form.prompt_count} • {form.license}</div>
