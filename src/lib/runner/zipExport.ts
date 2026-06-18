@@ -4,6 +4,7 @@
 import JSZip from "jszip";
 import {
   FINAL_BUYER_MODULES,
+  FINAL_BUYER_FILES,
   IGNORED_LEGACY_MODULES,
   SELLER_TOOLKIT_FILE,
   ADMIN_MODULES,
@@ -83,11 +84,20 @@ export async function buildFullSystemZip(input: BuildExportInput): Promise<Blob>
 }
 
 export function buyerPackageIsClean(modules: ModuleLike[]): { ok: boolean; leaks: string[] } {
-  // Buyer set must not include legacy seller-only filenames.
   const buyerSet = new Set<string>(FINAL_BUYER_MODULES as readonly string[]);
-  const leaks = modules
+  const legacyNameLeaks = modules
     .map((m) => m.file_name)
-    .filter((f) => IGNORED_LEGACY_MODULES.includes(f) && buyerSet.has(f));
+    .filter((f) => IGNORED_LEGACY_MODULES.includes(f as any) || (!buyerSet.has(f) && (FINAL_BUYER_FILES as readonly string[]).includes(f)));
+  const sellerLeakTerms = [
+    "seller toolkit", "pricing heuristic", "marketplace draft", "upload checklist", "manual upload guide",
+    "thumbnail brief", "cover generation brief", "marketing video script", "product manifest", "assumption register",
+    "PASS_FINAL", "blocking errors",
+  ];
+  const contentLeaks = modules
+    .filter((m) => buyerSet.has(m.file_name))
+    .filter((m) => sellerLeakTerms.some((term) => new RegExp(term, "i").test(m.content || "")))
+    .map((m) => `${m.file_name}: seller/admin leakage`);
+  const leaks = [...legacyNameLeaks, ...contentLeaks];
   return { ok: leaks.length === 0, leaks };
 }
 
