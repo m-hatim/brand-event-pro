@@ -12,6 +12,8 @@ import {
   runQC,
   safeMarketplaces,
   seedAssumptions,
+  computeCommercialReadiness,
+  findBuyerLeaks,
 } from "./engine";
 import {
   QC_THRESHOLDS,
@@ -501,9 +503,42 @@ export async function approvePackage(runId: string) {
   const latest = await runAndPersistQC(runId, bundle);
   const refreshed = await getRunBundle(runId);
   const messages = approvalDiagnostics(refreshed);
-  if (messages.length || latest.qc.score < QC_THRESHOLDS.PREMIUM_MIN || latest.qc.blocking_errors > 0) {
-    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ") || "Periksa QC terlebih dahulu."}`);
+
+  if (latest.qc.score < QC_THRESHOLDS.PREMIUM_MIN) {
+    messages.push(`Technical QC ${latest.qc.score} < ${QC_THRESHOLDS.PREMIUM_MIN}.`);
   }
+  if (latest.qc.blocking_errors > 0) {
+    messages.push(`Masih ada ${latest.qc.blocking_errors} blocking error.`);
+  }
+
+  const leakingFiles = (refreshed.modules as any[])
+    .filter((m) => (FINAL_BUYER_MODULES as readonly string[]).includes(m.file_name))
+    .filter((m) => findBuyerLeaks(m.content || "").length > 0)
+    .map((m) => m.file_name);
+  if (leakingFiles.length) messages.push(`Buyer leakage di: ${leakingFiles.join(", ")}.`);
+
+  const legacy = (refreshed.modules as any[]).filter((m) =>
+    ["06_QualityChecklist.md","07_License_Disclaimer.md","08_ManualUploadGuide.md","10_Pricing_Recommendation.md","11_Thumbnail_Brief.md","13_Ready_to_Upload_Checklist.md","14_Cover_Generation_Brief.md","15_Marketing_Video_CTA_Prompt.md","21_Marketplace_Upload_Asset_Kit.md","99_Assumption_Register.md"].includes(m.file_name)
+  );
+  if (legacy.length) messages.push(`Legacy files terdeteksi: ${legacy.map((m: any) => m.file_name).join(", ")}.`);
+
+  const pdfDraft = (refreshed.modules as any[]).find((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
+  const pdfOk = pdfDraft?.content && String(pdfDraft.content).length > 4000 && findBuyerLeaks(pdfDraft.content).length === 0;
+  if (!pdfOk) messages.push("Premium PDF validation gagal: terlalu tipis atau mengandung internal wording.");
+
+  const readiness = computeCommercialReadiness({
+    promptCount: refreshed.seller?.prompt_count ?? 10,
+    modules: refreshed.modules as any[],
+  });
+  if (!readiness.passed) {
+    const failed = readiness.checks.filter((check) => !check.ok).map((check) => check.id).join(", ");
+    messages.push(`Commercial readiness ${readiness.score} < 85. Gagal: ${failed}.`);
+  }
+
+  if (messages.length) {
+    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ")}`);
+  }
+
   await supabase.from("runs").update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() }).eq("id", runId);
   await supabase.from("exports").insert({
     owner_id: bundle.run.owner_id,
@@ -512,6 +547,7 @@ export async function approvePackage(runId: string) {
       mode: "MANUAL_UPLOAD_ONLY",
       qc_score: latest.qc.score,
       qc_status: latest.qc.status,
+      commercial_readiness: readiness.score,
       files: refreshed.modules.map((m) => ({ file: m.file_name, key: m.module_key })),
       approved_at: new Date().toISOString(),
     },
