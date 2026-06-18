@@ -19,6 +19,7 @@ import {
 import {
   QC_THRESHOLDS,
   REQUIRED_CORE_MODULES,
+  IGNORED_LEGACY_MODULES,
   RunStatus,
   isForbiddenModuleKey,
 } from "./types";
@@ -423,8 +424,11 @@ export async function generateAllRemainingFilesWithProgress(
   if (!bundle.manifest || !bundle.seller || !bundle.run) throw new Error("Manifest belum dibuat.");
 
   const payload = bundle.manifest.payload as any;
-  const missingCore = REQUIRED_CORE_MODULES.map((m) => m.file).filter((file) => !expectedFiles(payload).includes(file));
-  if (missingCore.length) throw new Error(`Manifest belum sell-ready. Klik Build Manifest ulang. Missing: ${missingCore.join(", ")}`);
+  const expectedFromManifest = expectedFiles(payload);
+  const expectedV2 = REQUIRED_CORE_MODULES.map((m) => m.file);
+  const missingCore = expectedV2.filter((file) => !expectedFromManifest.includes(file));
+  const legacyInManifest = expectedFromManifest.filter((file) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(file));
+  if (missingCore.length || legacyInManifest.length) throw new Error(`Manifest belum PPA v2 clean. Klik Build Manifest ulang. Missing: ${missingCore.join(", ") || "-"}. Legacy: ${legacyInManifest.join(", ") || "-"}`);
 
   await supabase.from("runs").update({ status: "CHUNK_RUNNING" as RunStatus }).eq("id", runId);
 
@@ -652,7 +656,10 @@ export async function upgradePackageToSellReady(
   const first = await getRunBundle(runId);
   const payload = first.manifest?.payload as any;
   const expected = expectedKeys(payload);
-  const needsManifest = !first.manifest || REQUIRED_CORE_MODULES.some((m) => !expected.includes(m.key));
+  const legacyModules = first.modules.filter((m) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(m.file_name));
+  const manifestFiles = expectedFiles(payload);
+  const legacyInManifest = manifestFiles.filter((file) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(file));
+  const needsManifest = !first.manifest || REQUIRED_CORE_MODULES.some((m) => !expected.includes(m.key)) || legacyModules.length > 0 || legacyInManifest.length > 0;
   if (needsManifest) await buildManifest(runId);
   await supabase.from("runs").update({ status: "UPGRADE_IN_PROGRESS" as RunStatus }).eq("id", runId);
   const bundle = await getRunBundle(runId);
@@ -664,6 +671,19 @@ export async function upgradePackageToSellReady(
     return missing || weak;
   });
   return regenerateInternal(runId, targets.length ? targets : bundle.modules, onProgress);
+}
+
+
+export async function autoGeneratePremiumProduct(runId: string, onProgress?: (i: number, total: number, file: string) => void) {
+  await generateArchitectureForRun(runId);
+  let bundle = await getRunBundle(runId);
+  for (const assumption of bundle.assumptions.filter((a) => a.status === "pending")) {
+    await confirmAssumption(assumption.id);
+  }
+  await approveArchitecture(runId);
+  await buildManifest(runId);
+  await generateAllRemainingFilesWithProgress(runId, onProgress, { force: true });
+  return ensureQcArtifactsSynced(runId);
 }
 
 export async function reopenForRegeneration(runId: string) {
