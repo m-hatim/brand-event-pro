@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import {
   approveArchitecture,
   approvePackage,
+  autoGeneratePremiumProduct,
   buildManifest,
   confirmAssumption,
   correctAssumption,
@@ -205,6 +206,18 @@ export default function RunDetail() {
     finally { setBusy(false); setProgress(null); }
   };
 
+  const runAutoGenerate = async () => {
+    setBusy(true);
+    setProgress({ i: 0, total: 0, file: "Auto pipeline starting" });
+    setLastRegen(null);
+    try {
+      await autoGeneratePremiumProduct(r!.id, (i, total, file) => setProgress({ i, total, file }));
+      toast.success("Auto pipeline selesai: architecture, assumptions, manifest, files, QC tersinkron.");
+      await reload();
+    } catch (e: any) { toast.error(e.message ?? String(e)); }
+    finally { setBusy(false); setProgress(null); }
+  };
+
   const runRegenerate = async (mode: "full" | "hard") => {
     setBusy(true);
     setProgress({ i: 0, total: 0, file: "" });
@@ -230,7 +243,7 @@ export default function RunDetail() {
 
   const r = bundle.run;
   const qcPayload = (bundle.qc?.payload ?? {}) as any;
-  const ready = r.status === "READY_FOR_SELLER_REVIEW" && (qcPayload.score ?? 0) >= 85 && (bundle.qc?.blocking_errors ?? 1) === 0;
+  const ready = r.status === "READY_FOR_SELLER_REVIEW" && (qcPayload.score ?? 0) >= 95 && (bundle.qc?.blocking_errors ?? 1) === 0;
   const modules = bundle.modules as any[];
   const chunks = bundle.chunks as any[];
   const completed = modules.filter((m) => m.status === "acked").length;
@@ -329,19 +342,33 @@ export default function RunDetail() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="arsitektur">
+      <Card className="mb-4 border-dashed">
+        <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">Auto Premium Pipeline</div>
+            <p className="text-sm text-muted-foreground">Arsitektur, asumsi normal, manifest, file generation, QC, dan commercial readiness dijalankan otomatis. Tab teknis lama tetap ada sebagai Advanced Diagnostics.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={runAutoGenerate} disabled={busy}>Generate Premium Product</Button>
+            <Button variant="outline" onClick={runInitialGenerate} disabled={busy || modules.length === 0}>Regenerate Files Only</Button>
+          </div>
+          {progress && progress.total > 0 && <div className="w-full text-xs text-muted-foreground">Progress {progress.i}/{progress.total}: <span className="font-mono">{progress.file}</span></div>}
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="export">
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="arsitektur">Arsitektur</TabsTrigger>
-          <TabsTrigger value="asumsi">Asumsi</TabsTrigger>
-          <TabsTrigger value="manifest">Manifest</TabsTrigger>
-          <TabsTrigger value="pembuat">Pembuat File</TabsTrigger>
-          <TabsTrigger value="paket">Paket Marketplace</TabsTrigger>
+          <TabsTrigger value="export">Export</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="qc">QC</TabsTrigger>
+          <TabsTrigger value="commercial">Commercial</TabsTrigger>
+          <TabsTrigger value="approval">Approval</TabsTrigger>
+          <TabsTrigger value="arsitektur">Diagnostics: Arsitektur</TabsTrigger>
+          <TabsTrigger value="asumsi">Diagnostics: Asumsi</TabsTrigger>
+          <TabsTrigger value="manifest">Diagnostics: Manifest</TabsTrigger>
+          <TabsTrigger value="pembuat">Diagnostics: Generator</TabsTrigger>
+          <TabsTrigger value="paket">Marketplace Preview</TabsTrigger>
           <TabsTrigger value="pdf">PDF Handbook</TabsTrigger>
-          <TabsTrigger value="export">Premium Export v2</TabsTrigger>
-          <TabsTrigger value="qc">Pemeriksaan Kualitas</TabsTrigger>
-          <TabsTrigger value="commercial">Commercial Readiness</TabsTrigger>
-          <TabsTrigger value="approval">Persetujuan Final</TabsTrigger>
         </TabsList>
 
         {/* TAB 1 — ARSITEKTUR */}
