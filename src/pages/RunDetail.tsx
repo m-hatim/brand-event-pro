@@ -39,6 +39,8 @@ import {
   isForbiddenModuleKey,
   statusLabel,
 } from "@/lib/runner/types";
+import { buildBuyerZip, buildSellerZip, buildFullSystemZip, downloadBlob as v2DownloadBlob, buyerPackageIsClean } from "@/lib/runner/zipExport";
+import { generateProductHandbookPdf } from "@/lib/runner/pdf";
 
 const BUYER_PACKAGE_FILES = new Set([
   "01_Product_Brief.md",
@@ -342,6 +344,8 @@ export default function RunDetail() {
           <TabsTrigger value="pembuat">Pembuat File</TabsTrigger>
           <TabsTrigger value="paket">Paket Marketplace</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
+          <TabsTrigger value="pdf">PDF Handbook</TabsTrigger>
+          <TabsTrigger value="export">Premium Export v2</TabsTrigger>
           <TabsTrigger value="qc">Pemeriksaan Kualitas</TabsTrigger>
           <TabsTrigger value="approval">Persetujuan Final</TabsTrigger>
         </TabsList>
@@ -626,6 +630,16 @@ export default function RunDetail() {
           ) : <p className="text-sm text-muted-foreground">QC belum tersedia. Jalankan Generate Semua File dulu.</p>}
         </TabsContent>
 
+        {/* TAB — PDF Handbook (v2) */}
+        <TabsContent value="pdf" className="mt-4 space-y-3">
+          <PdfHandbookCard bundle={bundle} />
+        </TabsContent>
+
+        {/* TAB — Premium Export v2 */}
+        <TabsContent value="export" className="mt-4 space-y-3">
+          <PremiumExportCard bundle={bundle} />
+        </TabsContent>
+
         {/* TAB 8 — APPROVAL */}
         <TabsContent value="approval" className="mt-4">
           <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} onReopen={() => runRegenerate("full")} />
@@ -637,6 +651,101 @@ export default function RunDetail() {
 
 function Stat({ label, value }: { label: string; value: any }) {
   return <div className="p-2 rounded-md bg-muted"><div className="text-xs text-muted-foreground">{label}</div><div className="font-semibold">{value}</div></div>;
+}
+
+function handbookMetaFromBundle(bundle: any) {
+  return {
+    productName: bundle?.seller?.brand || "Premium Product",
+    niche: bundle?.seller?.niche || "",
+    audience: bundle?.seller?.audience || "",
+    license: bundle?.seller?.license || "Personal & Commercial",
+    version: "1.0",
+    releaseDate: new Date().toISOString().slice(0, 10),
+  };
+}
+
+function PdfHandbookCard({ bundle }: { bundle: any }) {
+  const draft = (bundle.modules as any[]).find((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
+  const meta = handbookMetaFromBundle(bundle);
+  const handleDownload = () => {
+    if (!draft?.content) { toast.error("PDF source draft belum digenerate. Jalankan Generate Semua File dulu."); return; }
+    try {
+      const blob = generateProductHandbookPdf(draft.content, meta);
+      v2DownloadBlob(blob, "Product_Handbook.pdf");
+      toast.success("Product_Handbook.pdf dibuat.");
+    } catch (e: any) { toast.error(e.message ?? String(e)); }
+  };
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Premium PDF Handbook</CardTitle></CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p>Sumber PDF: <code>20_Complete_PDF_Product_Draft.md</code>. Cover styled, page break per H1, footer page numbers. Tidak menyertakan materi seller.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleDownload} disabled={!draft?.content}><Download className="w-4 h-4 mr-1" /> Download Product_Handbook.pdf</Button>
+        </div>
+        {draft?.content ? (
+          <Collapsible>
+            <CollapsibleTrigger className="text-xs underline">Preview Markdown Source</CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre className="text-xs bg-muted p-3 rounded-md max-h-[480px] overflow-auto whitespace-pre-wrap">{draft.content}</pre>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : <p className="text-xs text-muted-foreground">Source draft belum ada. Generate Semua File terlebih dahulu.</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PremiumExportCard({ bundle }: { bundle: any }) {
+  const modules = (bundle.modules as any[]).filter((m) => m.content && !isForbiddenModuleKey(m.module_key));
+  const meta = handbookMetaFromBundle(bundle);
+  const qcScore = bundle?.qc?.payload?.score;
+  const blocking = bundle?.qc?.blocking_errors ?? null;
+  const hasPdfDraft = modules.some((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
+  const hasSellerToolkit = modules.some((m) => m.file_name === "00_Seller_Master_Toolkit.md");
+  const isolation = buyerPackageIsClean(modules);
+
+  const run = (mode: "buyer" | "seller" | "full") => async () => {
+    try {
+      let blob: Blob; let name: string;
+      const input = { modules, meta };
+      if (mode === "buyer") { blob = await buildBuyerZip(input); name = "premium-product-system_v1.0_buyer.zip"; }
+      else if (mode === "seller") { blob = await buildSellerZip(input); name = "premium-product-system_v1.0_seller-toolkit.zip"; }
+      else { blob = await buildFullSystemZip(input); name = "premium-product-system_v1.0_full-system.zip"; }
+      v2DownloadBlob(blob, name);
+      toast.success(`${name} siap.`);
+    } catch (e: any) { toast.error(e.message ?? String(e)); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Premium Product Architecture v2 — Export</CardTitle></CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p>Tiga mode export. Buyer ZIP berisi <b>hanya</b> file buyer + premium PDF. Seller Toolkit ZIP berisi Seller Master Toolkit + manifest admin. Full System ZIP menggabungkan ketiganya.</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <Stat label="QC Score" value={qcScore ?? "—"} />
+            <Stat label="Blocking Errors" value={blocking ?? "—"} />
+            <Stat label="PDF Draft" value={hasPdfDraft ? "Ready" : "Missing"} />
+            <Stat label="Seller Toolkit" value={hasSellerToolkit ? "Ready" : "Missing"} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">Manual Upload Only</Badge>
+            <Badge variant="outline">No Marketplace API</Badge>
+            <Badge variant={isolation.ok ? "outline" : "destructive"}>{isolation.ok ? "Buyer Isolation OK" : `Buyer leak: ${isolation.leaks.join(", ")}`}</Badge>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={run("buyer")} disabled={!hasPdfDraft}><Download className="w-4 h-4 mr-1" /> Buyer ZIP</Button>
+            <Button variant="secondary" onClick={run("seller")} disabled={!hasSellerToolkit}><Download className="w-4 h-4 mr-1" /> Seller Toolkit ZIP</Button>
+            <Button variant="outline" onClick={run("full")} disabled={!hasPdfDraft || !hasSellerToolkit}><Download className="w-4 h-4 mr-1" /> Full System ZIP</Button>
+          </div>
+          {(!hasPdfDraft || !hasSellerToolkit) && (
+            <p className="text-xs text-muted-foreground">Jika tombol disable: jalankan <b>Generate Semua File</b> di tab Pembuat File agar <code>20_Complete_PDF_Product_Draft.md</code> dan <code>00_Seller_Master_Toolkit.md</code> tersedia.</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function AssumptionCard({ a, onChange, busy, setBusy }: any) {

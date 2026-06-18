@@ -214,9 +214,9 @@ export async function generateArchitectureForRun(runId: string) {
     tone: bundle.seller.tone ?? "Friendly",
   });
   if (bundle.architecture) {
-    await supabase.from("architecture_outputs").update({ payload, approved: false }).eq("id", bundle.architecture.id);
+    await supabase.from("architecture_outputs").update({ payload: payload as any, approved: false }).eq("id", bundle.architecture.id);
   } else {
-    await supabase.from("architecture_outputs").insert([{ owner_id: owner, run_id: runId, payload }]);
+    await supabase.from("architecture_outputs").insert({ owner_id: owner, run_id: runId, payload: payload as any });
   }
   if (bundle.assumptions.length === 0) {
     const seeds = seedAssumptions(bundle.run?.adapter ?? "CUSTOM");
@@ -282,8 +282,8 @@ export async function buildManifest(runId: string) {
   await supabase.from("batch_chunks").delete().eq("run_id", runId);
   await supabase.from("output_modules").delete().eq("run_id", runId);
 
-  if (bundle.manifest) await supabase.from("manifests").update({ payload }).eq("id", bundle.manifest.id);
-  else await supabase.from("manifests").insert({ owner_id: owner, run_id: runId, payload });
+  if (bundle.manifest) await supabase.from("manifests").update({ payload: payload as any }).eq("id", bundle.manifest.id);
+  else await supabase.from("manifests").insert({ owner_id: owner, run_id: runId, payload: payload as any });
 
   const moduleRows = payload.expected_modules
     .filter((m) => !isForbiddenModuleKey(m.key) && !isForbiddenModuleKey(m.file))
@@ -334,9 +334,9 @@ function makeGenerationSeller(bundle: Bundle) {
 
 async function persistQC(runId: string, ownerId: string, qc: ReturnType<typeof runQC>, existingQcId?: string) {
   if (existingQcId) {
-    await supabase.from("qc_results").update({ payload: qc, blocking_errors: qc.blocking_errors }).eq("id", existingQcId);
+    await supabase.from("qc_results").update({ payload: qc as any, blocking_errors: qc.blocking_errors }).eq("id", existingQcId);
   } else {
-    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc, blocking_errors: qc.blocking_errors });
+    await supabase.from("qc_results").insert({ owner_id: ownerId, run_id: runId, payload: qc as any, blocking_errors: qc.blocking_errors });
   }
 }
 
