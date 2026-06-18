@@ -36,29 +36,21 @@ import {
   MARKETPLACE_BUNDLE_MODULE,
   MARKETPLACE_MODULES,
   REQUIRED_CORE_FILES,
+  FINAL_BUYER_FILES,
+  FINAL_BUYER_MODULES,
+  SELLER_TOOLKIT_FILE,
+  ADMIN_MODULES,
   isForbiddenModuleKey,
   statusLabel,
 } from "@/lib/runner/types";
 import { buildBuyerZip, buildSellerZip, buildFullSystemZip, downloadBlob as v2DownloadBlob, buyerPackageIsClean } from "@/lib/runner/zipExport";
 import { generateProductHandbookPdf } from "@/lib/runner/pdf";
+import { calculateCommercialReadiness, detectProductIntent, generateProductStrategy } from "@/lib/runner/engine";
 
-const BUYER_PACKAGE_FILES = new Set([
-  "01_Product_Brief.md",
-  "02_PromptBook.md",
-  "03_PromptLibrary.csv",
-  "04_UsageGuide.md",
-  "05_Sample_Input_Output.md",
-  "06_QualityChecklist.md",
-  "07_License_Disclaimer.md",
-  "09_Buyer_FAQ.md",
-  "13_Ready_to_Upload_Checklist.md",
-]);
-
-const ADMIN_REVIEW_FILES = new Set([
-  "12_Product_Manifest.json",
-  "99_Assumption_Register.md",
-  "QC_Scorecard.md",
-]);
+const BUYER_PACKAGE_FILES = new Set<string>(FINAL_BUYER_FILES as readonly string[]);
+const BUYER_TEXT_MODULE_FILES = new Set<string>(FINAL_BUYER_MODULES as readonly string[]);
+const ADMIN_REVIEW_FILES = new Set<string>(ADMIN_MODULES as readonly string[]);
+const SELLER_TOOLKIT_FILES = new Set<string>([SELLER_TOOLKIT_FILE]);
 
 function sanitizeZipName(value: string) {
   return (value || "ppf-package")
@@ -74,10 +66,11 @@ function getMarketplaceDefinition(marketplace: string) {
 
 function moduleCategory(module: any) {
   if (BUYER_PACKAGE_FILES.has(module.file_name)) return "Buyer File";
+  if (SELLER_TOOLKIT_FILES.has(module.file_name)) return "Seller Toolkit";
   if (module.category === "marketplace" || Object.values(MARKETPLACE_MODULES).some((m) => m.file === module.file_name)) return "Marketplace Listing";
   if (ADMIN_REVIEW_FILES.has(module.file_name)) return "QC/Admin";
-  if (module.file_name === MARKETPLACE_BUNDLE_MODULE.file) return "Seller File";
-  return "Seller File";
+  if (module.file_name === MARKETPLACE_BUNDLE_MODULE.file) return "QC/Admin";
+  return "Seller/Admin";
 }
 
 function todayStamp() {
@@ -347,6 +340,7 @@ export default function RunDetail() {
           <TabsTrigger value="pdf">PDF Handbook</TabsTrigger>
           <TabsTrigger value="export">Premium Export v2</TabsTrigger>
           <TabsTrigger value="qc">Pemeriksaan Kualitas</TabsTrigger>
+          <TabsTrigger value="commercial">Commercial Readiness</TabsTrigger>
           <TabsTrigger value="approval">Persetujuan Final</TabsTrigger>
         </TabsList>
 
@@ -640,12 +634,71 @@ export default function RunDetail() {
           <PremiumExportCard bundle={bundle} />
         </TabsContent>
 
+
+        {/* TAB — COMMERCIAL READINESS */}
+        <TabsContent value="commercial" className="mt-4 space-y-3">
+          <CommercialReadinessCard bundle={bundle} />
+        </TabsContent>
+
         {/* TAB 8 — APPROVAL */}
         <TabsContent value="approval" className="mt-4">
           <ApprovalCard ready={ready} runId={r.id} busy={busy} reload={reload} setBusy={setBusy} status={r.status} approvedAt={r.approved_at} onReopen={() => runRegenerate("full")} />
         </TabsContent>
       </Tabs>
     </AppShell>
+  );
+}
+
+
+function CommercialReadinessCard({ bundle }: { bundle: any }) {
+  const seller = bundle?.seller;
+  const run = bundle?.run;
+  if (!seller || !run) return <p className="text-sm text-muted-foreground">Seller/run belum siap.</p>;
+  const intent = detectProductIntent({
+    productName: seller.brand || "",
+    niche: seller.niche || "",
+    targetAudience: seller.audience || "",
+    description: seller.confirmed_product_description || "",
+    selectedAdapter: run.adapter || "CUSTOM",
+    promptCount: seller.prompt_count || 10,
+  });
+  const strategy = generateProductStrategy({
+    productName: seller.brand || "",
+    niche: seller.niche || "",
+    audience: seller.audience || "",
+    description: seller.confirmed_product_description || "",
+    promptCount: seller.prompt_count || 10,
+    license: seller.license || "Personal & Commercial",
+    targetMarket: seller.target_market || "Indonesia",
+  }, intent);
+  const commercial = calculateCommercialReadiness({ intent, strategy, modules: bundle.modules || [], marketplaces: run.marketplaces || [] });
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Commercial Readiness</CardTitle></CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <div className="grid sm:grid-cols-3 md:grid-cols-6 gap-2">
+          <Stat label="Overall" value={`${commercial.overall_commercial_score}/100`} />
+          <Stat label="Level" value={commercial.readiness_level} />
+          <Stat label="Positioning" value={commercial.positioning_score} />
+          <Stat label="Prompt Depth" value={commercial.prompt_depth_score} />
+          <Stat label="PDF Premium" value={commercial.pdf_premium_score} />
+          <Stat label="Marketplace" value={commercial.marketplace_copy_score} />
+        </div>
+        <Card className="border-dashed"><CardContent className="p-3 space-y-1">
+          <div><b>Detected Intent:</b> {intent.intent} ({intent.confidence}/100)</div>
+          <div><b>Recommended Adapter:</b> {intent.recommended_adapter}</div>
+          {intent.mismatch_warning && <div className="text-destructive"><b>Mismatch:</b> {intent.mismatch_warning}</div>}
+          {intent.ambiguity_warning && <div className="text-yellow-700"><b>Ambiguity:</b> {intent.ambiguity_warning}</div>}
+          <div><b>Buyer Transformation:</b> {strategy.buyer_transformation}</div>
+        </CardContent></Card>
+        {commercial.recommendations.length > 0 ? (
+          <div>
+            <b>Recommendations:</b>
+            <ul className="list-disc pl-5">{commercial.recommendations.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          </div>
+        ) : <p className="text-muted-foreground">Tidak ada rekomendasi mayor. Tetap review manual sebelum jual.</p>}
+      </CardContent>
+    </Card>
   );
 }
 
