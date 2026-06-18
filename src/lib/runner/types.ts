@@ -46,6 +46,8 @@ export const MARKETPLACES = [
   "Lynk.id",
   "Gumroad",
   "Etsy",
+  "Envato",
+  "LemonSqueezy",
   "Payhip",
   "Lemon Squeezy",
 ] as const;
@@ -107,6 +109,8 @@ export const MARKETPLACE_MODULES: Record<Marketplace, ModuleDefinition> = {
   "Lynk.id": { key: "18_LynkID_Sales_Page_ID", file: "18_LynkID_Sales_Page_ID.md", chunks: 1, category: "marketplace", marketplace: "Lynk.id" },
   Gumroad: { key: "06_Gumroad_Listing", file: "06_Gumroad_Listing.md", chunks: 1, category: "marketplace", marketplace: "Gumroad" },
   Etsy: { key: "07_Etsy_Listing", file: "07_Etsy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Etsy" },
+  Envato: { key: "22_Envato_Listing", file: "22_Envato_Listing.md", chunks: 1, category: "marketplace", marketplace: "Envato" },
+  LemonSqueezy: { key: "23_LemonSqueezy_Listing", file: "23_LemonSqueezy_Listing.md", chunks: 1, category: "marketplace", marketplace: "LemonSqueezy" },
   Payhip: { key: "08_Payhip_Listing", file: "08_Payhip_Listing.md", chunks: 1, category: "marketplace", marketplace: "Payhip" },
   "Lemon Squeezy": { key: "09_LemonSqueezy_Listing", file: "09_LemonSqueezy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Lemon Squeezy" },
 };
@@ -269,7 +273,52 @@ export const FORBIDDEN_CLAIMS = [
   "dijamin laku",
   "pasti laris",
   "pasti closing",
+  "guaranteed viral",
+  "guaranteed approval",
+  "official partner",
+  "pasti FYP",
+  "pasti viral",
+  "fake reviews",
+  "fake scarcity",
 ];
+
+// ---- Premium Product Architecture v2 (additive; v1 stays intact) ----
+
+export const PPA_V2_VERSION = "PREMIUM_PRODUCT_ARCHITECTURE_V2" as const;
+
+export const FINAL_BUYER_MODULES = [
+  "01_Product_Brief.md",
+  "02_PromptBook.md",
+  "03_PromptLibrary.csv",
+  "04_UsageGuide.md",
+  "05_Sample_Input_Output.md",
+  "09_Buyer_FAQ.md",
+  "20_Complete_PDF_Product_Draft.md",
+  "QC_Scorecard.md",
+] as const;
+
+export const SELLER_TOOLKIT_FILE = "00_Seller_Master_Toolkit.md" as const;
+
+export const ADMIN_MODULES = [
+  "12_Product_Manifest.json",
+  "19_Marketplace_Bundle_Index.md",
+] as const;
+
+export const IGNORED_LEGACY_MODULES = [
+  "06_QualityChecklist.md",
+  "07_License_Disclaimer.md",
+  "08_ManualUploadGuide.md",
+  "13_Ready_to_Upload_Checklist.md",
+  "21_Marketplace_Upload_Asset_Kit.md",
+  "99_Assumption_Register.md",
+];
+
+// Normalize legacy marketplace display strings to v2 canonical names.
+export function normalizeMarketplace(name: string): string {
+  if (!name) return name;
+  if (/^lemon\s*squeezy$/i.test(name)) return "LemonSqueezy";
+  return name;
+}
 
 export const PLACEHOLDER_PATTERNS = [
   /Konten otomatis untuk modul/i,
