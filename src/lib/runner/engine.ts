@@ -72,6 +72,52 @@ export function correctDescription(input: string): string {
   return text;
 }
 
+
+export type OutputLang = "id" | "en" | "bi";
+
+export function resolveOutputLang(language?: string, targetMarket?: string): OutputLang {
+  const lang = (language || "").toLowerCase();
+  const market = (targetMarket || "").toLowerCase();
+  if (lang.includes("bilingual") || market.includes("indonesia + global")) return "bi";
+  if (lang.includes("english") || market === "global") return "en";
+  return "id";
+}
+
+function L(lang: OutputLang, id: string, en: string): string {
+  if (lang === "en") return en;
+  if (lang === "bi") return `${id}\n\n${en}`;
+  return id;
+}
+
+export const BUYER_LEAKAGE_PATTERNS: RegExp[] = [
+  /manual upload only/i,
+  /seller review required/i,
+  /premium product architecture v2/i,
+  /seller toolkit/i,
+  /pricing heuristic/i,
+  /thumbnail brief/i,
+  /cover generation/i,
+  /marketplace draft/i,
+  /upload checklist/i,
+  /approval enabled/i,
+  /blocking errors/i,
+  /PASS_FINAL/i,
+  /\bmanifest\b/i,
+  /insert content from/i,
+  /06_QualityChecklist/i,
+  /07_License_Disclaimer/i,
+  /13_Ready_to_Upload_Checklist/i,
+  /14_Cover_Generation_Brief/i,
+  /15_Marketing_Video_CTA/i,
+  /21_Marketplace_Upload_Asset_Kit/i,
+];
+
+export function findBuyerLeaks(content: string): string[] {
+  const hits: string[] = [];
+  for (const rx of BUYER_LEAKAGE_PATTERNS) if (rx.test(content || "")) hits.push(rx.source);
+  return hits;
+}
+
 export type ResolvedAdapter =
   | "CODING_AUTOMATION"
   | "TEXT_TO_IMAGE"
@@ -1253,11 +1299,232 @@ function marketingVideoCtaPrompt(seller: ReturnType<typeof sellerMeta>, adapter:
   ].join("\n");
 }
 
-function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
-  if (isDueDiligenceSystem(seller)) {
-    return [`# ${seller.brand}`, "## Product Handbook / Buyer Playbook", "", "# Cover", `${seller.brand}`, `${seller.niche}`, `For: ${seller.audience}`, `License: ${seller.license}`, "", "## Product Promise", "This handbook helps small business buyers structure early-stage due diligence before acquiring a small business. It helps users prepare seller questions, request evidence, map risks, identify red flags, and organize findings before consulting legal, financial, tax, or business professionals.", "", "## Why Due Diligence Matters", "Small business acquisitions often rely on informal records, owner explanations, simple bookkeeping, and relationship-based operations. A buyer needs a structured way to separate claims, evidence, assumptions, risks, and next steps before making a decision.", "", "## Who This Helps", mdList([seller.audience, "first-time business acquisition buyers", "small business owners exploring acquisition", "consultants helping clients structure preliminary checks"]), "", "## System Overview", "Use the prompts as a sequence: clarify acquisition goals, interview the seller, map the business model, verify revenue, identify operational risks, review customer/supplier dependency, scan red flags, list legal document questions, register assumptions, and summarize risk.", "", "## Beginner Workflow", mdList(["Start with Acquisition Goal Clarifier", "Use Seller Interview Question Builder", "Request evidence listed by the prompts", "Mark every unverified claim", "Summarize risks with QC_Scorecard.md"]), "", "## Advanced Workflow", mdList(["Run all prompts as a sequential due diligence workflow", "Separate facts, seller claims, assumptions, red flags, and professional questions", "Compare revenue claims with available documents", "Create a transition-risk list for the first 30-90 days", "Bring the summary to accounting/legal/tax/business advisors"]), "", "## Core Due Diligence Prompt System", mdList((detectProductIntentFromInputs({ niche: seller.niche, description: seller.confirmed_product_description, brand: seller.brand, audience: seller.audience }).promptCategories).slice(0, seller.prompt_count)), "", "## Example 1: Buying a Small Coffee Shop", "Input: Seller claims stable monthly profit, but documents are only four months of manual notes. Output should request transaction evidence, cost breakdown, lease status, supplier dependency, owner salary adjustment, and seasonality limitation.", "", "## Example 2: Buying a Laundry Business", "Input: Two branches, claimed recurring customers, equipment included. Output should check customer concentration, equipment condition, maintenance cost, lease terms, employee dependency, and transition plan.", "", "## Red Flag Checklist", mdList(["Revenue claim cannot be tied to evidence", "Profit excludes owner salary or hidden costs", "One or two customers dominate revenue", "Lease/permit status unclear", "Supplier terms are informal", "Seller reason for exit is inconsistent", "Operations depend heavily on current owner"]), "", "## Manual Verification Guide", "Never treat AI output as verified fact. Ask for documents, compare claims across sources, interview the seller, observe operations if possible, and consult professionals before signing or transferring funds.", "", "## FAQ", "This is a research and decision-support toolkit. It is not legal, financial, tax, valuation, investment, or audit advice.", "", "## License and Safe Use", `License: ${seller.license}. Do not resell the original files as-is. Outputs must be reviewed manually. Results vary based on input quality and available evidence.`, "", "## Final Notes", "The goal is not to make the decision for the buyer. The goal is to make the buyer's questions, evidence requests, and risk summary more structured before seeking professional advice."].join("\n");
+function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, _marketplaces: string[]): string {
+  const lang = resolveOutputLang(seller.language, seller.target_market);
+  const intent = detectProductIntentFromInputs({
+    niche: seller.niche,
+    description: seller.confirmed_product_description,
+    brand: seller.brand,
+    audience: seller.audience,
+    adapter,
+  });
+  const prompts =
+    intent.intent === "DUE_DILIGENCE_SYSTEM"
+      ? dueDiligencePromptSpecs(seller, intent.promptCategories)
+      : buildPromptLibrary(intent.recommendedAdapter || adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
+  const used = prompts.slice(0, seller.prompt_count);
+
+  const promptSummarySection: string[] = [];
+  promptSummarySection.push(L(lang, "# Ringkasan Semua Prompt", "# Prompt Summary — All Prompts"));
+  used.forEach((p, i) => {
+    promptSummarySection.push(
+      `## ${i + 1}. ${p.title}`,
+      L(lang, `**Tujuan:** ${p.purpose}`, `**Purpose:** ${p.purpose}`),
+      L(lang, `**Kapan Dipakai:** ${p.when_to_use}`, `**When to Use:** ${p.when_to_use}`),
+      L(lang, `**Output yang Diharapkan:** ${p.expected_output}`, `**Expected Output:** ${p.expected_output}`),
+      L(lang, `**Variabel:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`, `**Variables:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`),
+      ""
+    );
+  });
+
+  if (intent.intent === "DUE_DILIGENCE_SYSTEM") {
+    return [
+      `# ${seller.brand}`,
+      "",
+      L(lang, "# Pendahuluan", "# Introduction"),
+      L(
+        lang,
+        "Playbook ini membantu calon pembeli bisnis kecil melakukan due diligence awal secara terstruktur sebelum mengambil keputusan akuisisi. Semua hasil tetap perlu diverifikasi.",
+        "This playbook helps small-business buyers run structured preliminary due diligence before an acquisition decision. All results still require verification."
+      ),
+      "",
+      L(lang, "# Mengapa Due Diligence Penting", "# Why Due Diligence Matters"),
+      L(
+        lang,
+        "Akuisisi bisnis kecil sering bergantung pada catatan informal dan penjelasan pemilik. Buyer butuh cara memisahkan klaim, bukti, asumsi, risiko, dan langkah berikutnya.",
+        "Small-business acquisitions often rely on informal records and owner explanations. A buyer needs a way to separate claims, evidence, assumptions, risks, and next steps."
+      ),
+      "",
+      L(lang, "# Untuk Siapa", "# Who This Helps"),
+      mdList([seller.audience, L(lang, "Pembeli bisnis pertama kali", "First-time acquisition buyers"), L(lang, "Konsultan yang menyusun cek awal", "Consultants structuring preliminary checks")]),
+      "",
+      L(lang, "# Cara Memakai Sistem Ini", "# How to Use This System"),
+      mdList([
+        L(lang, "Mulai dari Acquisition Goal Clarifier", "Start with the Acquisition Goal Clarifier"),
+        L(lang, "Pakai Seller Interview Question Builder", "Use the Seller Interview Question Builder"),
+        L(lang, "Minta bukti untuk tiap klaim", "Request evidence for every claim"),
+        L(lang, "Tandai setiap klaim yang belum terbukti", "Flag every unverified claim"),
+      ]),
+      "",
+      L(lang, "# Beginner Workflow", "# Beginner Workflow"),
+      mdList([
+        L(lang, "Perjelas tujuan akuisisi", "Clarify acquisition goals"),
+        L(lang, "Wawancara pemilik usaha", "Interview the owner"),
+        L(lang, "Verifikasi pendapatan dasar", "Verify basic revenue"),
+        L(lang, "Rangkum risiko awal dengan checklist review", "Summarize early risk with the review checklist"),
+      ]),
+      "",
+      L(lang, "# Advanced Workflow", "# Advanced Workflow"),
+      mdList([
+        L(lang, "Jalankan semua prompt sebagai workflow berurutan", "Run all prompts as a sequential workflow"),
+        L(lang, "Pisahkan fakta, klaim, asumsi, dan red flag", "Separate facts, claims, assumptions, and red flags"),
+        L(lang, "Bandingkan klaim dengan dokumen", "Compare claims with documents"),
+        L(lang, "Buat daftar risiko transisi 30-90 hari", "Build a 30-90 day transition-risk list"),
+      ]),
+      "",
+      L(lang, "# Inti Workflow Due Diligence", "# Core Due Diligence Workflow"),
+      mdList(used.map((p) => p.title)),
+      "",
+      ...promptSummarySection,
+      L(lang, "# Contoh 1: Membeli Warung Kopi Kecil", "# Example 1: Buying a Small Coffee Shop"),
+      L(
+        lang,
+        "Penjual mengklaim profit stabil, tetapi dokumen hanya catatan manual 4 bulan. Minta bukti transaksi, rincian biaya, status sewa, ketergantungan supplier, penyesuaian gaji owner, dan batasan musiman.",
+        "Seller claims stable profit, but documents are only 4 months of manual notes. Request transaction evidence, cost breakdown, lease status, supplier dependency, owner-salary adjustment, and seasonality limits."
+      ),
+      "",
+      L(lang, "# Contoh 2: Membeli Bisnis Laundry", "# Example 2: Buying a Laundry Business"),
+      L(
+        lang,
+        "Dua cabang, klaim pelanggan tetap, peralatan termasuk. Cek konsentrasi pelanggan, kondisi alat, biaya perawatan, ketentuan sewa, ketergantungan karyawan, dan rencana transisi.",
+        "Two branches, claimed recurring customers, equipment included. Check customer concentration, equipment condition, maintenance cost, lease terms, employee dependency, and transition plan."
+      ),
+      "",
+      L(lang, "# Checklist Wawancara Penjual", "# Seller Interview Checklist"),
+      mdList([
+        L(lang, "Berapa persen omzet dari 10 pelanggan terbesar?", "What percentage of revenue comes from the top 10 customers?"),
+        L(lang, "Adakah bulan dengan penurunan signifikan?", "Any months with significant decline?"),
+        L(lang, "Berapa total biaya tetap bulanan?", "What are total monthly fixed costs?"),
+        L(lang, "Mengapa bisnis dijual sekarang?", "Why is the business being sold now?"),
+      ]),
+      "",
+      L(lang, "# Daftar Permintaan Dokumen", "# Document Request List"),
+      mdList([
+        L(lang, "Rekap transaksi bulanan", "Monthly transaction records"),
+        L(lang, "Daftar pelanggan anonim", "Anonymized customer list"),
+        L(lang, "Tagihan biaya utama", "Major cost invoices"),
+        L(lang, "Kontrak sewa dan izin", "Lease contract and permits"),
+        L(lang, "Daftar aset", "Asset list"),
+      ]),
+      "",
+      L(lang, "# Tabel Red Flag", "# Red Flag Table"),
+      mdList([
+        L(lang, "Klaim omzet tidak bisa dikaitkan dengan bukti", "Revenue claim cannot be tied to evidence"),
+        L(lang, "Profit tidak memperhitungkan gaji owner", "Profit excludes owner salary"),
+        L(lang, "Satu atau dua pelanggan mendominasi omzet", "One or two customers dominate revenue"),
+        L(lang, "Status sewa atau izin tidak jelas", "Lease or permit status is unclear"),
+        L(lang, "Alasan menjual tidak konsisten", "Reason for selling is inconsistent"),
+      ]),
+      "",
+      L(lang, "# Template Ringkasan Risiko", "# Risk Summary Template"),
+      mdList([
+        L(lang, "Operational Risk: rendah/sedang/tinggi + alasan", "Operational Risk: low/medium/high + reason"),
+        L(lang, "Customer Dependency: rendah/sedang/tinggi + alasan", "Customer Dependency: low/medium/high + reason"),
+        L(lang, "Supplier Risk: rendah/sedang/tinggi + alasan", "Supplier Risk: low/medium/high + reason"),
+        L(lang, "Next Step + dokumen yang diminta", "Next Step + requested documents"),
+      ]),
+      "",
+      L(lang, "# Panduan Verifikasi Manual", "# Manual Verification Guide"),
+      L(
+        lang,
+        "Jangan menganggap output AI sebagai fakta. Minta dokumen, bandingkan klaim, wawancara penjual, amati operasi, dan konsultasikan profesional sebelum menandatangani atau mentransfer dana.",
+        "Never treat AI output as fact. Request documents, compare claims, interview the seller, observe operations, and consult professionals before signing or transferring funds."
+      ),
+      "",
+      L(lang, "# Kapan Harus Konsultasi Profesional", "# When to Consult Professionals"),
+      L(
+        lang,
+        "Konsultasikan akuntan, pajak, hukum, atau advisor bisnis sebelum keputusan transaksi final.",
+        "Consult an accountant, tax, legal, or business advisor before any final transaction decision."
+      ),
+      "",
+      "# FAQ",
+      L(
+        lang,
+        "Ini alat bantu riset dan pendukung keputusan. Bukan nasihat hukum, finansial, pajak, valuasi, investasi, atau audit.",
+        "This is a research and decision-support toolkit. It is not legal, financial, tax, valuation, investment, or audit advice."
+      ),
+      "",
+      L(lang, "# Lisensi dan Penggunaan Aman", "# License and Safe Use"),
+      L(
+        lang,
+        `Lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya. Output harus direview. Hasil bervariasi sesuai kualitas input dan bukti.`,
+        `License: ${seller.license}. Do not resell the original files as-is. Outputs must be reviewed. Results vary based on input quality and evidence.`
+      ),
+      "",
+      L(lang, "# Catatan Akhir", "# Final Notes"),
+      L(
+        lang,
+        "Tujuannya bukan membuat keputusan untuk buyer, tetapi membuat pertanyaan, permintaan bukti, dan ringkasan risiko buyer lebih terstruktur.",
+        "The goal is not to decide for the buyer, but to make the buyer's questions, evidence requests, and risk summary more structured."
+      ),
+    ].join("
+");
   }
-  return [`# ${seller.brand}`, "## Product Handbook / Buyer Playbook", "", "## Product Promise", seller.confirmed_product_description, "", "## System Overview", `This product helps ${seller.audience} use prompts for ${seller.niche} in a structured way.`, "", "## Workflow", mdList(["Read Product Brief", "Open PromptBook", "Fill variables", "Run prompt", "Review with QC Scorecard"]), "", "## Safe Use", "No guaranteed results. Review all output manually."].join("\n");
+
+  return [
+    `# ${seller.brand}`,
+    "",
+    L(lang, "# Pendahuluan", "# Introduction"),
+    seller.confirmed_product_description,
+    "",
+    L(lang, "# Janji Produk", "# Product Promise"),
+    L(
+      lang,
+      `Paket ini membantu ${seller.audience} memakai prompt untuk ${seller.niche} secara terstruktur, dengan contoh konkret dan checklist review.`,
+      `This pack helps ${seller.audience} use prompts for ${seller.niche} in a structured way, with concrete examples and a review checklist.`
+    ),
+    "",
+    L(lang, "# Untuk Siapa", "# Who This Helps"),
+    mdList([seller.audience, L(lang, "Pengguna pemula yang ingin hasil rapi", "Beginners who want clean output"), L(lang, "Pengguna lanjutan yang ingin workflow", "Advanced users who want a workflow")]),
+    "",
+    L(lang, "# Cara Memakai Sistem Ini", "# How to Use This System"),
+    mdList([
+      L(lang, "Baca Product Brief", "Read the Product Brief"),
+      L(lang, "Buka PromptBook", "Open the PromptBook"),
+      L(lang, "Isi variabel dengan data nyata", "Fill variables with real data"),
+      L(lang, "Jalankan prompt, lalu review", "Run the prompt, then review"),
+    ]),
+    "",
+    L(lang, "# Beginner Workflow", "# Beginner Workflow"),
+    mdList([
+      L(lang, "Pilih prompt yang paling dekat dengan kebutuhan", "Pick the closest prompt to your need"),
+      L(lang, "Isi variabel wajib", "Fill required variables"),
+      L(lang, "Bandingkan hasil dengan sample", "Compare result with the sample"),
+    ]),
+    "",
+    L(lang, "# Advanced Workflow", "# Advanced Workflow"),
+    mdList([
+      L(lang, "Rangkai beberapa prompt jadi satu workflow", "Chain several prompts into one workflow"),
+      L(lang, "Tambahkan konteks spesifik", "Add specific context"),
+      L(lang, "Review setiap output sebelum dipakai", "Review every output before use"),
+    ]),
+    "",
+    ...promptSummarySection,
+    L(lang, "# Contoh Penggunaan", "# Usage Examples"),
+    L(
+      lang,
+      `Contoh untuk ${seller.niche}: isi variabel dengan konteks nyata, jalankan prompt, lalu bandingkan output dengan kebutuhan dan revisi bila perlu.`,
+      `Example for ${seller.niche}: fill variables with real context, run the prompt, then compare output to your needs and revise if necessary.`
+    ),
+    "",
+    L(lang, "# Panduan Verifikasi Manual", "# Manual Verification Guide"),
+    L(lang, "Selalu review output sebelum dipakai pada konteks nyata.", "Always review output before using it in a real context."),
+    "",
+    "# FAQ",
+    L(lang, "Tidak ada jaminan hasil. Output perlu review manual.", "No guaranteed results. Output needs manual review."),
+    "",
+    L(lang, "# Lisensi dan Penggunaan Aman", "# License and Safe Use"),
+    L(
+      lang,
+      `Lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya.`,
+      `License: ${seller.license}. Do not resell the original files as-is.`
+    ),
+    "",
+    L(lang, "# Catatan Akhir", "# Final Notes"),
+    L(lang, "Kualitas hasil bergantung pada kualitas input dan review Anda.", "Output quality depends on your input quality and review."),
+  ].join("
+");
 }
 
 
@@ -1840,6 +2107,45 @@ const BLOCKING_IDS = new Set<string>([
   QC_CHECK_IDS.QC_SCORECARD_EXISTS,
 ]);
 
+
+export interface CommercialReadinessResult {
+  score: number;
+  passed: boolean;
+  checks: { id: string; ok: boolean; weight: number; note: string }[];
+}
+
+export function computeCommercialReadiness(args: {
+  promptCount: number;
+  modules: { file_name: string; content: string | null }[];
+}): CommercialReadinessResult {
+  const byFile = (f: string) => args.modules.find((m) => m.file_name === f)?.content || "";
+  const brief = byFile("01_Product_Brief.md");
+  const book = byFile("02_PromptBook.md");
+  const usage = byFile("04_UsageGuide.md");
+  const sample = byFile("05_Sample_Input_Output.md");
+  const faq = byFile("09_Buyer_FAQ.md");
+  const pdf = byFile("20_Complete_PDF_Product_Draft.md");
+
+  const checks: CommercialReadinessResult["checks"] = [];
+  const add = (id: string, ok: boolean, weight: number, note: string) => checks.push({ id, ok, weight, note });
+
+  add("transformation_clarity", /membantu|helps|menyusun|build|structure/i.test(brief) && brief.length > 600, 12, "Product Brief explains a clear transformation.");
+  add("specific_workflow", /(Beginner Workflow|Advanced Workflow)/i.test(usage) && /(Beginner Workflow|Advanced Workflow)/i.test(pdf), 12, "Beginner + Advanced workflow present.");
+  add("prompt_specificity", (book.match(/\*\*Full Prompt:\*\*/g) || []).length >= args.promptCount, 12, "Each prompt has a full prompt body.");
+  add("output_format_clarity", /\*\*Expected Output:\*\*|Expected Output/i.test(book), 8, "Expected output described.");
+  add("realistic_examples", (sample.match(/^##\s+Sample\s+\d+/gim) || []).length >= 3, 12, "At least 3 concrete samples.");
+  add("pdf_depth", pdf.length > 4000 && (pdf.match(/^#\s+/gm) || []).length >= 8, 14, "PDF playbook is deep enough.");
+  const leakAll = [brief, book, usage, sample, faq, pdf].some((c) => findBuyerLeaks(c).length > 0);
+  add("no_internal_language", !leakAll, 12, "No seller/internal wording in buyer files.");
+  add("faq_relevance", faq.length > 300 && (faq.match(/^##\s+\d+/gim) || []).length >= 4, 8, "FAQ has 4+ relevant entries.");
+  add("sample_realism", /Sample User Input|Sample Input|Example AI Output|Example Filled Input/i.test(sample), 8, "Samples show input and output.");
+
+  const total = checks.reduce((sum, check) => sum + check.weight, 0);
+  const got = checks.reduce((sum, check) => sum + (check.ok ? check.weight : 0), 0);
+  const score = Math.round((got / total) * 100);
+  return { score, passed: score >= 85, checks };
+}
+
 export function runQC(args: {
   promptCount: number;
   modules: { module_key: string; file_name: string; content: string | null; status: string; validation: string }[];
@@ -1857,8 +2163,7 @@ export function runQC(args: {
   add("PPA_V2_FILES_COMPLETE", "PPA v2 file lengkap", missing.length ? "FAIL" : "PASS", missing.length ? `Missing: ${missing.join(", ")}` : "Buyer, seller, dan admin files lengkap.", 12);
   const legacy = modules.filter((m) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(m.file_name));
   add("NO_IGNORED_LEGACY_FILES", "Tidak ada legacy file", legacy.length ? "FAIL" : "PASS", legacy.length ? `Legacy files: ${legacy.map((m) => m.file_name).join(", ")}` : "Tidak ada legacy file di output.", 12);
-  const leakage = [/seller toolkit/i, /pricing heuristic/i, /thumbnail brief/i, /cover generation/i, /upload manual/i, /manual upload guide/i, /marketplace draft/i, /approval enabled/i, /blocking errors/i, /PASS_FINAL/i, /06_QualityChecklist/i, /07_License_Disclaimer/i, /13_Ready_to_Upload_Checklist/i, /14_Cover_Generation_Brief/i, /15_Marketing_Video_CTA/i, /21_Marketplace_Upload_Asset_Kit/i, /Insert content from/i];
-  const leaks = modules.filter((m) => (FINAL_BUYER_MODULES as readonly string[]).includes(m.file_name) && leakage.some((rx) => rx.test(m.content || "")));
+  const leaks = modules.filter((m) => (FINAL_BUYER_MODULES as readonly string[]).includes(m.file_name) && findBuyerLeaks(m.content || "").length > 0);
   add("BUYER_CONTENT_CLEAN", "Buyer content bebas seller/internal leakage", leaks.length ? "FAIL" : "PASS", leaks.length ? `Leakage: ${leaks.map((m) => m.file_name).join(", ")}` : "Buyer content bersih.", 12);
   const apiModules = modules.filter((m) => isForbiddenModuleKey(m.module_key) || isForbiddenModuleKey(m.file_name));
   add(QC_CHECK_IDS.NO_API_MODULES, "Tidak ada API_* module", apiModules.length ? "FAIL" : "PASS", apiModules.length ? `API module: ${apiModules.map((m) => m.file_name).join(", ")}` : "Manual upload only aman.", 8);
@@ -1886,7 +2191,7 @@ export function runQC(args: {
   try { const parsed = JSON.parse(byFile("12_Product_Manifest.json")?.content || "{}"); manifestValid = parsed.architecture === PPA_V2_VERSION && Array.isArray(parsed.files?.buyer) && Array.isArray(parsed.files?.seller) && Array.isArray(parsed.files?.admin) && parsed.manual_upload_only === true && parsed.api_mode_enabled === false; } catch (_e) {}
   add(QC_CHECK_IDS.MANIFEST_JSON_VALID, "Product Manifest JSON valid", manifestValid ? "PASS" : "FAIL", manifestValid ? "Manifest v2 valid." : "Manifest JSON invalid atau bukan schema v2.", 8);
   const pdfDraft = byFile("20_Complete_PDF_Product_Draft.md");
-  add("PDF_DRAFT_BUYER_READY", "PDF draft buyer-ready", pdfDraft?.content && pdfDraft.content.length > 2500 && !/Insert content from|Aplikasi belum membuat binary PDF otomatis|Seller Review Required/i.test(pdfDraft.content) ? "PASS" : "FAIL", "PDF draft harus lengkap, bukan placeholder.", 8);
+  add("PDF_DRAFT_BUYER_READY", "PDF draft buyer-ready", pdfDraft?.content && pdfDraft.content.length > 4000 && findBuyerLeaks(pdfDraft.content).length === 0 && !/Insert content from|Aplikasi belum membuat binary PDF otomatis/i.test(pdfDraft.content) ? "PASS" : "FAIL", "PDF draft harus lengkap, bukan placeholder.", 8);
   const score = Math.min(100, Math.round(checks.reduce((sum, check) => sum + (check.status === "PASS" ? check.weight : check.status === "WARNING" ? check.weight * 0.5 : 0), 0)));
   const blockingIds = new Set(["PPA_V2_FILES_COMPLETE", "NO_IGNORED_LEGACY_FILES", "BUYER_CONTENT_CLEAN", QC_CHECK_IDS.NO_API_MODULES, QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, QC_CHECK_IDS.PROMPT_COUNT_MATCHES, QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV_HEADER_VALID", "PDF_DRAFT_BUYER_READY", QC_CHECK_IDS.MANIFEST_JSON_VALID, "all_modules_acked"]);
   const blocking = checks.filter((check) => check.status === "FAIL" && blockingIds.has(check.id));
