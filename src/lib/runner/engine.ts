@@ -118,6 +118,77 @@ export function findBuyerLeaks(content: string): string[] {
   return hits;
 }
 
+// ============================================================================
+// PPA v2 — Marketplace leakage patterns.
+// Applied ONLY to public marketplace listing files, not seller/admin files.
+// ============================================================================
+export const MARKETPLACE_LEAKAGE_PATTERNS: RegExp[] = [
+  /manual upload only/i,
+  /draft ini harus direview/i,
+  /diunggah manual oleh seller/i,
+  /tidak ada api marketplace/i,
+  /tidak ada API marketplace/i,
+  /tidak ada auto-publish/i,
+  /auto-publish/i,
+  /no marketplace api/i,
+  /no auto-publish/i,
+  /seller wajib/i,
+  /seller toolkit/i,
+  /seller master toolkit/i,
+  /marketplace draft/i,
+  /pricing heuristic/i,
+  /pricing recommendation/i,
+  /thumbnail brief/i,
+  /manual upload guide/i,
+  /quality checklist/i,
+  /license disclaimer/i,
+  /cover generation/i,
+  /cover generation brief/i,
+  /upload manual saja/i,
+  /policy reminder/i,
+  /approval enabled/i,
+  /blocking[_ ]errors/i,
+  /PASS_FINAL/i,
+  /06_QualityChecklist/i,
+  /07_License_Disclaimer/i,
+  /08_ManualUploadGuide/i,
+  /10_Pricing_Recommendation/i,
+  /11_Thumbnail_Brief/i,
+  /13_Ready_to_Upload_Checklist/i,
+  /14_Cover_Generation_Brief/i,
+  /15_Marketing_Video_CTA/i,
+  /21_Marketplace_Upload_Asset_Kit/i,
+  /99_Assumption_Register/i,
+  /Insert content from/i,
+  /QC_Scorecard\.md/i,
+  /00_Seller_Master_Toolkit/i,
+  /12_Product_Manifest/i,
+];
+
+export function findMarketplaceLeaks(content: string): string[] {
+  const hits: string[] = [];
+  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
+    rx.lastIndex = 0;
+    if (rx.test(content || "")) hits.push(rx.source);
+  }
+  return hits;
+}
+
+function scrubMarketplaceLeaks(text: string): string {
+  let out = text || "";
+  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
+    rx.lastIndex = 0;
+    out = out.replace(rx, "");
+  }
+  return out
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s\-–—•]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export type ResolvedAdapter =
+
 export type ResolvedAdapter =
   | "CODING_AUTOMATION"
   | "TEXT_TO_IMAGE"
@@ -231,8 +302,15 @@ export function seedAssumptions(adapter: string) {
 }
 
 export function marketplaceModulesFor(marketplaces: string[]): ModuleDefinition[] {
-  const selected = marketplaces
+  const seen = new Set<string>();
+  const selected = (marketplaces ?? [])
+    .map((m) => normalizeMarketplace(String(m)))
     .filter((m): m is keyof typeof MARKETPLACE_MODULES => Object.prototype.hasOwnProperty.call(MARKETPLACE_MODULES, m))
+    .filter((m) => {
+      if (seen.has(m)) return false;
+      seen.add(m);
+      return true;
+    })
     .map((m) => MARKETPLACE_MODULES[m]);
   return selected.length ? [...selected, MARKETPLACE_BUNDLE_MODULE] : [];
 }
@@ -1668,237 +1746,173 @@ export function generateActualQCScorecardContent(args: { seller: SellerMeta; qc:
 }
 
 
-function marketplaceListing(fileName: string, seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
-  const marketplace = /Shopee/i.test(fileName) ? "Shopee"
-    : /Tokopedia/i.test(fileName) ? "Tokopedia"
-    : /Lynk/i.test(fileName) ? "Lynk.id"
-    : /Gumroad/i.test(fileName) ? "Gumroad"
-    : /Etsy/i.test(fileName) ? "Etsy"
-    : /Envato/i.test(fileName) ? "Envato"
-    : /LemonSqueezy/i.test(fileName) ? "LemonSqueezy"
-    : /Payhip/i.test(fileName) ? "Payhip"
-    : /Lemon/i.test(fileName) ? "Lemon Squeezy"
-    : "Marketplace";
-  if (fileName === "19_Marketplace_Bundle_Index.md") return marketplaceBundleIndex(seller, marketplaces);
-  const adapterCopy: Record<ResolvedAdapter, { title: string; hook: string; description: string; benefits: string[]; faq: string[]; tags: string[] }> = {
-    TEXT_TO_IMAGE: {
-      title: `${seller.brand} — ${seller.prompt_count} AI Image Prompts untuk ${seller.niche}`,
-      hook: "Buat prompt gambar produk yang lebih spesifik: lighting, background, composition, aspect ratio, dan negative prompt sudah dipandu.",
-      description: `Paket ini membantu buyer membuat prompt visual untuk product photography, marketplace thumbnail, social media visual, moodboard brand, dan variasi gambar AI. Cocok untuk ${seller.audience}.`,
-      benefits: ["Prompt gambar produk siap edit", "Negative prompt untuk mengurangi artifact", "Panduan lighting dan camera angle", "Aspect ratio untuk marketplace/social", "Sample output konkret"],
-      faq: ["Apakah ini jasa desain? Tidak, ini prompt pack visual.", "Apakah hasil gambar dijamin sama? Tidak, hasil bergantung pada model AI dan input.", "Apakah boleh untuk produk sendiri? Bisa, selama Anda punya hak atas produk/brand."],
-      tags: ["AI image prompt", "product photo", "visual prompt", "marketplace thumbnail"],
-    },
-    IMAGE_EDITING: {
-      title: `${seller.brand} — ${seller.prompt_count} Image Editing Prompt Briefs untuk ${seller.niche}`,
-      hook: "Ubah instruksi edit foto yang biasanya kabur menjadi brief konkret: background, cleanup, retouch, color, crop, dan export spec.",
-      description: `Paket ini berisi prompt/brief editing untuk memperjelas kebutuhan retouch foto produk, background replacement, cleanup, color correction, dan resize marketplace. Cocok untuk ${seller.audience}.`,
-      benefits: ["Brief before-after jelas", "Panduan cleanup dan retouch", "Crop/resize marketplace", "Color correction tetap menjaga warna asli", "Checklist QA final"],
-      faq: ["Apakah ini mengedit foto otomatis? Tidak, ini brief/prompt editing.", "Apakah bisa untuk semua foto? Kualitas hasil bergantung pada file awal.", "Apakah boleh mengedit foto orang? Hanya dengan izin yang sah."],
-      tags: ["image editing", "product retouch", "background removal", "photo brief"],
-    },
-    TEXT_TO_VIDEO: {
-      title: `${seller.brand} — ${seller.prompt_count} AI Video Prompt Scripts untuk ${seller.niche}`,
-      hook: "Bangun prompt video dengan hook 3 detik, scene breakdown, shot list, camera movement, transition, voiceover, dan CTA.",
-      description: `Paket ini membantu buyer menyusun prompt video pendek untuk demo produk, iklan ringan, Reels/TikTok, dan storyboard visual. Tidak ada klaim viral/FYP.`,
-      benefits: ["Hook 3 detik", "Scene dan durasi jelas", "Camera movement dan transition", "Voiceover direction", "CTA ending"],
-      faq: ["Apakah menjamin viral? Tidak.", "Apakah ini file video jadi? Tidak, ini prompt/script video.", "Apakah musik/footage disediakan? Tidak, seller/buyer wajib memakai aset legal."],
-      tags: ["video prompt", "shot list", "storyboard", "short video script"],
-    },
-    ACADEMIC_WRITING: {
-      title: `${seller.brand} — Academic Writing Prompt Kit untuk ${seller.niche}`,
-      hook: "Susun draft akademik dengan struktur, gap, metodologi, pembahasan, dan etika sitasi yang lebih aman.",
-      description: `Paket ini membantu menyusun bagian akademik seperti latar belakang, literature review, metodologi, abstrak, paraphrase akademik, limitation, dan citation ethics. Bukan jasa joki dan tidak membuat DOI/sitasi palsu.`,
-      benefits: ["Struktur akademik lebih rapi", "Citation ethics checker", "No fake DOI/source", "Paraphrase akademik", "Final academic QA"],
-      faq: ["Apakah ini joki? Tidak.", "Apakah membuat referensi otomatis? Tidak, sumber harus diverifikasi pengguna.", "Apakah boleh untuk skripsi/jurnal? Bisa sebagai alat bantu draft etis."],
-      tags: ["academic writing", "literature review", "citation ethics", "research paper"],
-    },
-    RESEARCH: {
-      title: `${seller.brand} — Research Prompt Pack untuk ${seller.niche}`,
-      hook: "Rancang riset lebih terstruktur: question framing, literature mapping, triangulasi, interview guide, survey, dan limitation.",
-      description: `Paket ini membantu buyer menyusun desain riset, instrumen, analisis tematik, sintesis insight, dan QA report. Tidak mengarang data, narasumber, atau temuan.`,
-      benefits: ["Research question lebih fokus", "Literature mapping", "Source triangulation", "Interview/survey guide", "Limitation register"],
-      faq: ["Apakah data disediakan? Tidak.", "Apakah boleh membuat klaim riset? Hanya berdasarkan data/sumber valid.", "Apakah cocok untuk market research? Ya, dengan verifikasi manual."],
-      tags: ["research prompt", "interview guide", "survey design", "triangulation"],
-    },
-    CONTENT_CREATION: {
-      title: `${seller.brand} — Content Creation Prompt Kit untuk ${seller.niche}`,
-      hook: "Buat hook, caption, carousel, script video pendek, calendar, storytelling angle, dan repurpose plan lebih cepat.",
-      description: `Paket ini membantu content creator dan social media admin membuat ide konten yang lebih rapi dan konsisten. Tidak ada klaim pasti viral, FYP, reach, atau engagement.`,
-      benefits: ["Hook dan caption", "Carousel outline", "Short video script", "Content calendar", "Brand voice variation"],
-      faq: ["Apakah menjamin FYP? Tidak.", "Apakah caption langsung publish? Tetap perlu review brand voice.", "Apakah cocok untuk UMKM? Ya, terutama untuk struktur ide."],
-      tags: ["content creation", "caption", "carousel", "social media prompts"],
-    },
-    BUSINESS_MARKETING: {
-      title: `${seller.brand} — Marketing Prompt Pack untuk ${seller.niche}`,
-      hook: "Bangun positioning, USP, sales page, funnel, email sequence, objection handling, pricing angle, dan campaign plan.",
-      description: `Paket ini membantu buyer menyusun asset marketing secara etis dan terstruktur. Tidak menjamin sales, conversion, revenue, closing, atau income.`,
-      benefits: ["Positioning dan USP", "Sales page outline", "Funnel map", "Email sequence", "Objection handling"],
-      faq: ["Apakah menjamin penjualan? Tidak.", "Apakah ini strategi final? Ini draft yang perlu review dan testing.", "Apakah boleh untuk client? Sesuai lisensi dan review manual."],
-      tags: ["marketing prompt", "sales page", "funnel", "email sequence"],
-    },
-  
-    READY_TO_SELL_PRODUCT: {
-      title: `${seller.brand} — Ready-to-Sell Product Pack untuk ${seller.niche}`,
-      hook: "Ubah draft/ZIP produk digital menjadi paket siap upload: cover prompt, PDF product draft, listing, CTA video prompt, delivery instructions, dan upload asset kit.",
-      description: `Paket ini membantu seller menyiapkan ${seller.niche} menjadi produk digital yang lebih siap dijual di Gumroad, Shopee, Tokopedia, Etsy, Payhip, Lynk.id, atau marketplace lain. Output tetap manual upload, bukan auto-publish, dan semua klaim harus direview sebelum publish.`,
-      benefits: ["Cover generation brief", "Complete PDF product draft", "Marketplace product page assets", "Marketing video CTA prompts", "Buyer delivery instructions", "Seller upload checklist", "No overclaim guard"],
-      faq: ["Apakah ini membuat cover/PDF otomatis di aplikasi? Tidak, app membuat brief/prompt dan PDF source draft siap dirender manual.", "Apakah listing siap paste? Draft listing disediakan, tetapi seller wajib review kebijakan marketplace.", "Apakah menjamin penjualan? Tidak, tidak ada jaminan sales, conversion, atau traffic."],
-      tags: ["ready to sell", "Gumroad product", "digital product pack", "cover prompt", "PDF product"],
-    },
+// ============================================================================
+// PPA v2 — Eight dedicated marketplace listing generators.
+// Buyer-safe only. No seller/internal wording. No legacy file names.
+// ID platforms: Bahasa Indonesia. Global platforms: English.
+// ============================================================================
 
-  CODING_AUTOMATION: {
-      title: `${seller.brand} — ${seller.prompt_count} Fullstack Coding & Automation Prompts`,
-      hook: "Ubah ide web app menjadi PRD, user flow, database schema, auth, API plan, automation workflow, testing, dan deployment checklist.",
-      description: `Paket ini membantu developer/founder menyusun blueprint teknis React/Supabase/fullstack secara lebih rapi. Ini bukan software auto-build dan tidak menyertakan API marketplace.`,
-      benefits: ["PRD generator", "Database schema planning", "Auth/role planning", "Backend/API logic", "Testing/deployment checklist"],
-      faq: ["Apakah ini membuat app otomatis? Tidak, ini prompt/blueprint.", "Apakah perlu coding? Untuk implementasi, ya.", "Apakah aman untuk production? Harus direview dan diuji."],
-      tags: ["coding prompts", "PRD", "database", "fullstack automation"],
-    },
-    EVIDENCE_HANDBOOK: {
-      title: `${seller.brand} — Evidence-Based Handbook / Vault Builder untuk ${seller.niche}`,
-      hook: "Bangun handbook, vault, atau reference guide yang lebih serius: evidence table, source log, claim checker, limitation, safety note, dan update log sudah dipandu.",
-      description: `Paket ini membantu buyer menyusun handbook/vault berbasis referensi untuk ${seller.niche}. Cocok untuk suplemen, riset, edukasi, market guide, productivity, atau domain expert reference. Tidak membuat sumber, DOI, data, dosis, klaim medis/finansial/hukum, atau rekomendasi profesional secara otomatis.`,
-      benefits: ["Handbook scope & reader promise", "Evidence table builder", "Source verification log", "Claim strength grading", "Risk/limitation/safety section", "No fake reference checker", "Update log/versioning"],
-      faq: ["Apakah ini handbook jadi dengan referensi final? Tidak, ini prompt system dan framework; sumber asli wajib ditambahkan dan diverifikasi.", "Apakah boleh untuk suplemen/kesehatan? Bisa untuk struktur edukatif, tetapi tidak boleh memberi dosis/diagnosis/klaim medis tanpa sumber dan review profesional.", "Apakah boleh membuat DOI sendiri? Tidak. DOI, jurnal, guideline, data, dan angka tidak boleh dikarang."],
-      tags: ["evidence handbook", "research vault", "source verification", "claim checker", "reference guide"],
-    },
-    CUSTOM: {
-      title: `${seller.brand} — Custom Prompt Pack untuk ${seller.niche}`,
-      hook: "Prompt pack custom yang disusun berdasarkan niche, audiens, output format, dan QA gate agar tidak generic.",
-      description: `Paket ini membantu buyer membuat workflow prompt custom untuk ${seller.niche}. Gunakan sebagai draft, lalu review manual sebelum dijual atau dipakai untuk client.`,
-      benefits: ["Custom prompt system", "Niche-specific workflow", "Example input/output", "QA checklist", "Safe use notes"],
-      faq: ["Apakah ini generic? Tidak, harus disesuaikan dengan niche input.", "Apakah menjamin hasil? Tidak.", "Apakah bisa untuk berbagai kebutuhan? Bisa selama direview manual."],
-      tags: ["custom prompts", "prompt engineering", "prompt pack", "digital product"],
-    },
-  };
-  const copy = adapterCopy[adapter];
-  return [
-    `# Listing Draft — ${marketplace}`,
-    "",
-    "**Manual upload only.** Draft ini harus direview dan diunggah manual oleh seller. Tidak ada API marketplace dan tidak ada auto-publish.",
-    "",
-    "## Product Title",
-    copy.title,
-    "",
-    "## Hero Hook",
-    copy.hook,
-    "",
-    "## Product Description",
-    seller.confirmed_product_description,
-    copy.description,
-    "",
-    "## Buyer Problem",
-    `Buyer di niche ${seller.niche} sering membutuhkan output yang lebih spesifik, tetapi prompt awal terlalu pendek dan hasil AI menjadi generik.`,
-    "",
-    "## Solution",
-    `Paket ini menyediakan ${seller.prompt_count} prompt unik, PromptLibrary CSV, Sample Input/Output, Usage Guide, Quality Checklist, License Disclaimer, Pricing Recommendation, Thumbnail Brief, dan Manual Upload Guide.`,
-    "",
-    "## What Buyer Gets",
-    mdList(copy.benefits.concat(["PromptBook lengkap", "PromptLibrary CSV", "Sample Input/Output", "License & Disclaimer", "Manual Upload Guide", "Buyer FAQ"])),
-    "",
-    "## Suggested Tags",
-    mdList(copy.tags),
-    "",
-    "## Delivery Instructions",
-    "Produk dikirim sebagai file digital/ZIP atau link unduhan yang seller kelola sendiri sesuai aturan marketplace.",
-    "",
-    "## FAQ",
-    copy.faq.map((item) => `**${item.split("?")[0]}?** ${item.includes("?") ? item.split("?").slice(1).join("?").trim() : ""}`).join("\n"),
-    "",
-    "## Policy Reminder",
-    `Verifikasi kebijakan ${marketplace} untuk produk digital sebelum publish manual.`,
-    "",
-    "## Disclaimer",
-    "Tidak ada jaminan hasil bisnis. Tidak ada auto-publish. Tidak ada klaim official marketplace partner. Seller dan buyer wajib review manual.",
-  ].join("\n");
+const MARKETPLACE_BUYER_INCLUDED_ID = [
+  "Product Brief",
+  "PromptBook (panduan prompt lengkap)",
+  "PromptLibrary CSV (langsung pakai di spreadsheet)",
+  "Panduan Pemakaian (langkah demi langkah)",
+  "Contoh Input & Output nyata",
+  "FAQ Pembeli",
+  "Product Handbook (PDF premium)",
+  "Buyer Review Scorecard",
+];
+
+const MARKETPLACE_BUYER_INCLUDED_EN = [
+  "Product Brief",
+  "PromptBook (complete prompt guide)",
+  "PromptLibrary CSV (ready for spreadsheet use)",
+  "Usage Guide (step-by-step)",
+  "Sample Input & Output (concrete examples)",
+  "Buyer FAQ",
+  "Product Handbook (premium PDF)",
+  "Buyer Review Scorecard",
+];
+
+function isMarketplaceDD(seller: ReturnType<typeof sellerMeta>): boolean {
+  return isDueDiligenceSystem(seller) || /due diligence|akuisisi|acquisition|beli bisnis|membeli usaha|membeli bisnis/i.test(
+    `${seller.niche} ${seller.confirmed_product_description} ${seller.brand}`
+  );
 }
 
+function shopeeListingID(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  const judul = dd ? `${seller.brand} — Paket Prompt Cek Bisnis Sebelum Beli` : `${seller.brand} — Paket Prompt AI untuk ${seller.niche}`;
+  const deskripsi = dd
+    ? `Paket prompt digital untuk membantu **${seller.audience}** memeriksa bisnis sebelum dibeli. Susun pertanyaan ke pemilik usaha, cek klaim omzet, petakan risiko operasional, dan rangkum temuan sebelum konsultasi ke profesional.`
+    : `Paket prompt digital untuk **${seller.audience}** yang ingin output AI lebih spesifik dan konsisten di bidang ${seller.niche}. Dilengkapi contoh nyata dan panduan langkah demi langkah.`;
+  const cocokUntuk = dd
+    ? ["Calon pembeli bisnis kecil atau UMKM", "Individu yang ingin proses cek bisnis lebih terstruktur", "Pemula yang baru pertama kali mempertimbangkan akuisisi", "Konsultan yang membantu klien menilai sebuah usaha"]
+    : [seller.audience, "Pemula yang ingin output AI lebih spesifik", `Siapapun yang butuh workflow ${seller.niche} lebih terstruktur`];
+  const manfaat = dd
+    ? ["Susun pertanyaan wawancara ke pemilik usaha secara terstruktur", "Verifikasi klaim omzet dan biaya dasar", "Petakan risiko operasional sebelum keputusan", "Temukan red flag awal yang sering terlewat", "Ringkas temuan untuk dibawa ke konsultasi profesional"]
+    : [`Output ${seller.niche} lebih spesifik dan konsisten`, "Hemat waktu menyusun konten AI", "Contoh input dan output nyata siap pakai", "Panduan langkah demi langkah mudah diikuti", "Buyer Review Scorecard untuk cek kualitas output"];
+  return scrubMarketplaceLeaks([
+    `# Listing Shopee — ${seller.brand}`, "", "## Judul Produk", judul, "", "## Deskripsi Singkat", deskripsi, "",
+    "## Cocok Untuk", mdList(cocokUntuk), "", "## Manfaat Utama", mdList(manfaat), "",
+    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pakai Singkat",
+    "1. Buka Product Handbook (PDF) untuk lihat daftar prompt.", "2. Pilih prompt sesuai kebutuhan.", "3. Isi bagian [konteks] dengan informasi spesifik Anda.", "4. Jalankan di ChatGPT, Claude, atau Gemini.", "5. Review output dan verifikasi dengan data nyata.", "",
+    "## Catatan Penting", dd ? "Produk ini adalah alat bantu riset awal. **Bukan** nasihat hukum, keuangan, pajak, valuasi, atau audit. Semua output AI wajib diverifikasi manual dan dikonsultasikan dengan profesional sebelum keputusan transaksi." : "Produk ini adalah alat bantu. Output AI tetap perlu direview sebelum dipakai pada konteks nyata. Tidak ada jaminan hasil.", "",
+    "## Pengiriman", "Produk berupa file digital. Pembeli mengunduh file setelah transaksi selesai sesuai sistem Shopee. Unduh instan setelah pembayaran terkonfirmasi.", "",
+    "## FAQ", "**Apakah ini software atau aplikasi?** Bukan. Ini paket file digital berisi prompt siap pakai.", "**AI mana yang bisa dipakai?** ChatGPT, Claude, Gemini, atau AI teks lainnya.", "**Apakah hasilnya dijamin akurat?** Tidak. Output AI perlu direview dan diverifikasi manual.", dd ? "**Apakah ini nasihat hukum atau keuangan?** Bukan. Ini alat bantu riset awal. Konsultasikan profesional untuk keputusan final." : "**Apakah cocok untuk pemula?** Ya. Ada panduan langkah demi langkah yang mudah diikuti.", "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital di Shopee setelah pembayaran berhasil.", "**Apakah ada refund?** Ikuti kebijakan refund produk digital Shopee.",
+  ].join("\n"));
+}
+
+function tokopediaListingID(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Listing Tokopedia — ${seller.brand}`, "", "## Nama Produk", dd ? `${seller.brand} — Paket Prompt Due Diligence untuk Pembelian Bisnis Kecil` : `${seller.brand} — Paket Prompt AI Premium untuk ${seller.niche}`, "",
+    "## Deskripsi Produk", dd ? `File digital berisi sistem prompt terstruktur untuk membantu **${seller.audience}** melakukan pemeriksaan bisnis awal sebelum pembelian. Mencakup pertanyaan wawancara penjual, checklist verifikasi omzet, pemetaan risiko operasional, dan panduan ringkasan temuan.` : `File digital berisi sistem prompt terstruktur untuk **${seller.audience}** yang bekerja di bidang ${seller.niche}. Setiap prompt dilengkapi panduan pemakaian, contoh input/output, dan checklist kualitas output.`, "",
+    "## Fitur Utama", mdList(dd ? ["Pertanyaan wawancara penjual yang terstruktur", "Checklist verifikasi klaim omzet", "Pemetaan risiko operasional", "Scanner red flag awal", "Template ringkasan temuan sebelum konsultasi"] : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input dan output untuk setiap prompt", "Panduan pemakaian langkah demi langkah", "CSV untuk diimpor ke spreadsheet", "Buyer Review Scorecard"]), "",
+    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pemakaian", "1. Buka Product Handbook (PDF) setelah mengunduh paket.", "2. Pilih prompt yang sesuai kebutuhan.", "3. Isi variabel [konteks] dengan informasi spesifik.", "4. Jalankan prompt di ChatGPT, Claude, atau Gemini.", "5. Evaluasi output menggunakan Buyer Review Scorecard.", "",
+    "## Kompatibilitas AI", mdList(["ChatGPT", "Claude", "Gemini", "AI teks berbasis chat lainnya"]), "", "## Pengiriman", "Produk berupa file digital. Pembeli mengunduh file melalui sistem pengiriman produk digital Tokopedia setelah pembayaran dikonfirmasi.", "",
+    "## Catatan Penggunaan", dd ? "Produk ini adalah alat bantu riset awal. Bukan nasihat hukum, pajak, keuangan, valuasi, atau audit. Seluruh output AI harus diverifikasi manual dan dikonsultasikan dengan profesional sebelum keputusan transaksi." : "Produk digital. Output AI perlu direview sebelum dipakai. Tidak ada jaminan hasil bisnis.", "",
+    "## FAQ", "**Apakah ini software?** Bukan. Ini file digital berisi prompt siap pakai.", "**Apakah bisa dipakai langsung?** Ya. Buka Handbook, pilih prompt, isi konteks, jalankan di AI.", "**Apakah ada garansi hasil?** Tidak. Output AI perlu diverifikasi manual.", dd ? "**Apakah ini pengganti due diligence profesional?** Bukan. Ini alat bantu riset awal saja." : "**Apakah cocok untuk pemula?** Ya, ada panduan lengkap.", "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital Tokopedia setelah pembayaran berhasil.",
+  ].join("\n"));
+}
+
+function lynkListingID(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Sales Page Lynk.id — ${seller.brand}`, "", "## Headline", dd ? `Periksa Bisnis Incaran Anda Lebih Terstruktur — ${seller.brand}` : `Hasilkan ${seller.niche} Lebih Cepat — ${seller.brand}`, "",
+    "## Subheadline", dd ? "Bantu Anda menyusun pertanyaan ke penjual, cek klaim omzet, dan petakan risiko sebelum konsultasi profesional." : `Bantu ${seller.audience} bekerja lebih cepat dan rapi di ${seller.niche} menggunakan prompt AI yang terstruktur.`, "",
+    "## Yang Anda Dapatkan", mdList(dd ? ["Pertanyaan wawancara ke pemilik usaha", "Checklist verifikasi omzet dan biaya", "Pemetaan risiko operasional", "Red flag scanner awal", "Template ringkasan temuan"] : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input dan output nyata", "Panduan langkah demi langkah", "CSV PromptLibrary", "Buyer Review Scorecard"]), "",
+    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pakai", "1. Unduh paket setelah pembayaran.", "2. Buka Product Handbook (PDF).", "3. Pilih prompt, isi konteks, jalankan di ChatGPT / Claude / Gemini.", "4. Review output sebelum digunakan.", "",
+    "## Catatan Penting", dd ? "Bukan nasihat hukum, keuangan, pajak, atau valuasi. Alat bantu riset awal saja." : "Produk digital. Output AI perlu direview. Tidak ada jaminan hasil.", "", "## AI yang Kompatibel", mdList(["ChatGPT", "Claude", "Gemini", "AI teks berbasis chat lainnya"]), "",
+    "## FAQ", "**Apakah ini software?** Bukan, ini paket file digital.", "**Hasilnya dijamin?** Tidak. Output AI perlu diverifikasi.", dd ? "**Ini nasihat hukum/keuangan?** Bukan. Alat bantu riset awal." : "**Cocok pemula?** Ya, ada panduan lengkap.", "", "## CTA", dd ? "Unduh sekarang dan mulai periksa bisnis incaran Anda lebih terstruktur." : `Unduh sekarang dan mulai hasilkan ${seller.niche} lebih cepat.`,
+  ].join("\n"));
+}
+
+function envatoListingEN(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  const itemTitle = dd ? `${seller.brand} — AI Due Diligence Prompt System for Small Business Acquisition` : `${seller.brand} — AI Prompt Pack for ${seller.niche}`;
+  return scrubMarketplaceLeaks([
+    `# Envato Listing — ${seller.brand}`, "", "## Item Title", itemTitle, "", "## Short Description", dd ? "A structured prompt system for small business acquisition buyers. Prepare seller interviews, verify revenue claims, map operational risks, and summarize findings before consulting professionals." : `A polished AI prompt pack for ${seller.audience}. Produces specific, consistent output for ${seller.niche} with usage guide, sample I/O, and a buyer review scorecard.`, "",
+    "## Item Overview", dd ? `${seller.brand} is a prompt-based due diligence support toolkit for small business acquisition buyers. It helps you structure seller interview questions, verify revenue and cost claims, map operational risks, review customer and supplier dependency, scan for basic financial red flags, and summarize findings before consulting lawyers, accountants, or business advisors.\n\nThis is not legal, financial, tax, valuation, investment, or audit advice. All AI output requires human review and professional verification before any transaction decision.` : `${seller.brand} is a structured prompt pack for ${seller.audience} working on ${seller.niche}. Instead of generic AI output, you get specific, context-driven results guided by ${seller.prompt_count} tested prompts with examples and review notes.`, "",
+    "## Key Features", mdList(dd ? ["Seller interview question builder", "Revenue and cost verification checklist", "Operational risk mapping prompts", "Customer dependency review", "Supplier and vendor risk review", "Basic financial red flag scanner", "Legal document question list", "Deal assumption register", "Risk summary workflow"] : [`${seller.prompt_count} structured prompts organized by workflow stage`, "Full usage guide with step-by-step instructions", "Concrete sample input and output pairs", "CSV prompt library", "Buyer review scorecard", "Premium PDF handbook"]), "",
+    "## Included Files", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Best For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers evaluating a small business", "Solo entrepreneurs exploring acquisition", "Business consultants helping clients assess a deal", "Micro-investors running preliminary checks"] : [seller.audience, "Beginners who want cleaner AI output", "Professionals who want a structured prompt workflow"]), "",
+    "## Compatible With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How It Works", "1. Open the Product Handbook (PDF) to browse all prompts.", "2. Select the prompt matching your current stage or goal.", "3. Fill in [context] with your specific information.", "4. Run the prompt in your preferred AI tool.", "5. Review the output critically before using it.", dd ? "6. Log findings and red flags. Consult qualified professionals before making transaction decisions." : "6. Treat output as a working draft. Verify before use in real-world contexts.", "",
+    "## Limitations & Safe Use", dd ? "This is a preliminary research and decision-support product. It is not legal, financial, tax, valuation, investment, or audit advice. It does not guarantee deal quality, business performance, financing approval, or acquisition success. All AI output requires human review and professional verification before any transaction." : "This is a research and decision-support product. It does not guarantee business results. All AI output should be reviewed before use in real contexts.", "", "## Delivery", "Instant digital download after purchase. Files delivered as a downloadable package per Envato platform delivery settings.", "", "## Suggested Tags", dd ? "due diligence, business acquisition, small business, AI prompts, buyer checklist, risk assessment, business research, acquisition tool, prompt pack" : `ai prompts, prompt pack, ${seller.niche.toLowerCase()}, digital product, prompt templates, productivity, ai workflow`,
+  ].join("\n"));
+}
+
+function gumroadListingEN(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Gumroad Listing — ${seller.brand}`, "", "## Headline", dd ? `Stop guessing. Start asking better questions. — ${seller.brand}` : `Stop getting generic AI output. — ${seller.brand}`, "", "## The Problem", dd ? `Most small business buyers walk into seller meetings without a structured question list. ${seller.brand} gives you a prompt-based system to prepare better questions, verify claims, map risks, and summarize findings before consulting professionals.` : `Most people using AI for ${seller.niche} get generic output because prompts are too short. ${seller.brand} gives ${seller.audience} a structured system with examples and review checks.`, "", "## What You Get", mdList(dd ? ["Seller interview question builder", "Revenue verification checklist", "Operational risk mapping", "Red flag scanner", "Deal assumption register", "Risk summary workflow", "Product Handbook PDF", "Buyer Review Scorecard"] : [`${seller.prompt_count} structured prompts`, "Usage guide", "Sample input/output pairs", "CSV prompt library", "Buyer review scorecard", "Premium PDF handbook"]), "", "## Who This Is For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Solo entrepreneurs exploring acquisition", "Business consultants helping clients assess deals"] : [seller.audience, "Beginners who want better AI output", "Professionals who want a structured workflow"]), "", "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text AI"]), "", "## How to Use", "1. Download and open the Product Handbook PDF.", "2. Choose the prompt for your current stage.", "3. Fill in your context.", "4. Run in your preferred AI tool.", "5. Review output before acting on it.", "", "## Important", dd ? "This is a preliminary research tool. Not legal, financial, tax, valuation, investment, or audit advice. All output requires human verification and professional consultation before any transaction." : "This is a research and decision-support product. AI output should be reviewed before use. No results are guaranteed.", "", "## Delivery", "Instant digital download via Gumroad. Files available immediately after payment confirmation. No shipping, no waiting.", "", "## License", seller.license,
+  ].join("\n"));
+}
+
+function etsyListingEN(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Etsy Listing — ${seller.brand}`, "", "## Title", dd ? `AI Due Diligence Prompt Pack — Small Business Acquisition Research Tool — ${seller.brand}` : `AI Prompt Pack for ${seller.niche} — ${seller.brand} — Instant Digital Download`, "", "## Description", dd ? "This digital download includes a structured AI prompt system for small business acquisition buyers. Use it to prepare seller interview questions, verify revenue claims, map operational risks, and organize findings before consulting professionals. This is a digital product. No physical item will be shipped. Not legal, financial, tax, valuation, or audit advice." : `This digital download includes a structured AI prompt pack for ${seller.audience} working on ${seller.niche}. Includes prompts, usage guide, sample input/output, CSV library, and premium PDF handbook. No physical item will be shipped.`, "", "## What's Included", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Compatible AI Tools", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How to Use", "1. Download your files immediately after purchase.", "2. Open the Product Handbook PDF.", "3. Choose the prompt you need.", "4. Fill in [context] with your specific situation.", "5. Run in ChatGPT, Claude, or Gemini.", "6. Review the output before use.", "", "## Limitations & Safe Use", dd ? "This is a preliminary research and decision-support product. Not legal, financial, tax, valuation, investment, or audit advice. All output requires professional verification before transaction decisions." : "AI output should be reviewed before real-world use. No results are guaranteed. Not professional advice.", "", "## Delivery", "This is a digital product — instant download. No physical item will be shipped. Files are available immediately after purchase confirmation on Etsy.", "", "## Tags", dd ? "due diligence, business acquisition, small business research, AI prompts, buyer checklist, business analysis, risk assessment, prompt pack, digital download, acquisition tool" : `AI prompts, prompt pack, digital download, instant download, ${seller.niche.toLowerCase()}, productivity, template, AI tools`, "", "## License", seller.license,
+  ].join("\n"));
+}
+
+function lemonSqueezyListingEN(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Lemon Squeezy Listing — ${seller.brand}`, "", "## Product Headline", dd ? `${seller.brand} — Structured Due Diligence Prompts for Small Business Buyers` : `${seller.brand} — AI Prompt System for ${seller.niche}`, "", "## Subheadline", dd ? "Prepare better seller interviews, verify claims, and map risks before consulting professionals." : `Helps ${seller.audience} produce specific, consistent AI output for ${seller.niche}.`, "", "## What You Get", mdList(dd ? ["Seller interview question builder", "Revenue verification checklist", "Operational risk mapper", "Customer dependency review", "Red flag scanner", "Risk summary workflow"] : [`${seller.prompt_count} structured prompts`, "Context-driven inputs", "Sample input/output pairs", "CSV prompt library", "Buyer review scorecard"]), "", "## Included Files", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI"]), "", "## How It Works", "1. Purchase and download immediately.", "2. Open the Product Handbook PDF.", "3. Select the prompt for your goal.", "4. Fill in your context.", "5. Run in your AI tool of choice.", "6. Review output before acting.", "", "## Limitations", dd ? "Preliminary research tool only. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transaction decisions." : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "", "## Delivery", "Instant digital download via Lemon Squeezy. Files available immediately after payment confirmation.", "", "## License", seller.license,
+  ].join("\n"));
+}
+
+function payhipListingEN(seller: ReturnType<typeof sellerMeta>): string {
+  const dd = isMarketplaceDD(seller);
+  return scrubMarketplaceLeaks([
+    `# Payhip Listing — ${seller.brand}`, "", "## Product Title", dd ? `${seller.brand} — AI Prompt System for Small Business Due Diligence` : `${seller.brand} — AI Prompt Pack for ${seller.niche}`, "", "## Product Description", dd ? "A complete prompt-based system for small business acquisition buyers. Covers seller interview questions, revenue verification, operational risk mapping, red flag scanning, and findings summary before consulting professionals." : `A structured AI prompt pack for ${seller.audience}. Includes ${seller.prompt_count} prompts, usage guide, sample input/output, CSV library, and premium PDF handbook.`, "", "## What's Included", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Best For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Consultants helping clients assess deals"] : [seller.audience, "Beginners wanting better AI output", "Professionals building structured workflows"]), "", "## Compatible With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How to Use", "1. Download your files after purchase.", "2. Open the Product Handbook PDF.", "3. Choose your prompt.", "4. Fill in [context].", "5. Run in your preferred AI tool.", "6. Review before acting.", "", "## Limitations & Safe Use", dd ? "Preliminary research tool. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transactions." : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "", "## Delivery", "Instant digital download via Payhip. Files are available immediately after payment is complete.", "", "## License", seller.license,
+  ].join("\n"));
+}
 
 function marketplaceBundleIndex(seller: ReturnType<typeof sellerMeta>, marketplaces: string[]): string {
+  const mps = (marketplaces ?? []).map((m) => normalizeMarketplace(String(m)));
   return [
     `# Marketplace Bundle Index — ${seller.brand}`,
     "",
     "## Marketplace Files Generated",
-    ...marketplaceModulesFor(marketplaces).map((m) => `- ${m.file}`),
+    ...marketplaceModulesFor(mps).filter((m) => m.file !== MARKETPLACE_BUNDLE_MODULE.file).map((m) => `- ${m.file}`),
     "",
-    "## Recommended Upload Order",
-    "1. Review product ZIP and license.",
-    "2. Prepare thumbnail/cover.",
-    "3. Copy listing draft for selected marketplace.",
-    "4. Verify policy and publish manually.",
+    "## Recommended Use",
+    "1. Open the listing file for the selected platform.",
+    "2. Copy the platform-specific title, description, features, delivery note, and FAQ.",
+    "3. Review platform policy and adjust category/tags manually before publishing.",
+    "4. Do a final human review for claims, delivery instructions, and price.",
     "",
-    "## Manual Upload Reminder",
-    "Semua marketplace file adalah draft. Seller harus upload manual, mengecek kebijakan, dan mereview klaim sebelum publish.",
+    "## Note",
+    "This index is seller-side. It should not be included in the buyer ZIP.",
   ].join("\n");
 }
 
-// ---------- Premium Product Architecture v2: Seller Master Toolkit ----------
-
-function platformVoice(platform: string): { tone: string; currency: string; lang: string } {
-  const p = normalizeMarketplace(platform);
-  if (p === "Shopee") return { tone: "SEO-heavy Bahasa Indonesia, short bullet-driven", currency: "IDR", lang: "id" };
-  if (p === "Tokopedia") return { tone: "Formal e-commerce Bahasa Indonesia, emphasize file digital + manual download", currency: "IDR", lang: "id" };
-  if (p === "Lynk.id") return { tone: "Creator-funnel, personal, direct CTA", currency: "IDR", lang: "id" };
-  if (p === "Gumroad") return { tone: "Global storytelling, transformation-focused", currency: "USD", lang: "en" };
-  if (p === "Etsy") return { tone: "Digital template positioning, tag-heavy, instant download wording (no platform-approval claims)", currency: "USD", lang: "en" };
-  if (p === "Envato") return { tone: "Structured documentation, technical quality, organized files", currency: "USD", lang: "en" };
-  if (p === "LemonSqueezy") return { tone: "SaaS-like product page, clean headline, conversion-focused, license clarity", currency: "USD", lang: "en" };
-  return { tone: "Neutral", currency: "USD", lang: "en" };
+function marketplaceListing(
+  fileName: string,
+  seller: ReturnType<typeof sellerMeta>,
+  _adapter: ResolvedAdapter,
+  marketplaces: string[]
+): string {
+  if (fileName === MARKETPLACE_BUNDLE_MODULE.file) return marketplaceBundleIndex(seller, marketplaces);
+  if (/Shopee/i.test(fileName)) return shopeeListingID(seller);
+  if (/Tokopedia/i.test(fileName)) return tokopediaListingID(seller);
+  if (/LynkID|Lynk\.id|Lynk_id|Lynk/i.test(fileName)) return lynkListingID(seller);
+  if (/Envato/i.test(fileName)) return envatoListingEN(seller);
+  if (/Gumroad/i.test(fileName)) return gumroadListingEN(seller);
+  if (/Etsy/i.test(fileName)) return etsyListingEN(seller);
+  if (/LemonSqueezy|Lemon_Squeezy|Lemon\s*Squeezy|Lemon/i.test(fileName)) return lemonSqueezyListingEN(seller);
+  if (/Payhip/i.test(fileName)) return payhipListingEN(seller);
+  return envatoListingEN(seller);
 }
 
 function marketplaceAdapterCopy(platform: string, seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const v = platformVoice(platform);
-  const p = normalizeMarketplace(platform);
-  const title = `${seller.brand} — ${seller.niche}`;
-  const sub = adapter === "CODING_AUTOMATION"
-    ? "PRD + Database Schema + Auth + API + Automation + Deployment Prompts"
-    : adapter === "EVIDENCE_HANDBOOK"
-      ? "Evidence Table + Source Log + Claim Checker + Safety Notes"
-      : `${seller.prompt_count} structured prompts + sample + checklist`;
-  return [
-    `### ${p}`,
-    `**Voice / Tone:** ${v.tone}`,
-    `**Suggested Currency:** ${v.currency}`,
-    "",
-    `**Title:** ${title} — ${sub}`,
-    `**Subtitle/Headline:** ${v.lang === "id"
-      ? `Paket prompt terstruktur untuk ${seller.audience}. Upload manual, review seller, no fake claims.`
-      : `Structured prompt system for ${seller.audience}. Manual delivery. Seller-reviewed. No income guarantee.`}`,
-    "",
-    "**Bullet Benefits:**",
-    "- " + (v.lang === "id" ? "PromptBook lengkap (purpose, full prompt, contoh input/output, checklist QA)" : "Premium PromptBook with purpose, full prompt, examples, QA checklist"),
-    "- " + (v.lang === "id" ? "CSV PromptLibrary siap dibuka di spreadsheet" : "CSV PromptLibrary opens in any spreadsheet"),
-    "- " + (v.lang === "id" ? "Sample Input/Output untuk pemula dan advanced" : "Sample Input/Output for beginner and advanced users"),
-    "- " + (v.lang === "id" ? "Usage Guide + Buyer FAQ" : "Usage Guide + Buyer FAQ"),
-    "- " + (v.lang === "id" ? "Premium PDF Handbook" : "Premium PDF Handbook"),
-    "",
-    "**Full Description:**",
-    v.lang === "id"
-      ? `${seller.confirmed_product_description}\n\nPaket ini membantu ${seller.audience} menyusun ${seller.niche} secara terstruktur menggunakan ${seller.prompt_count} prompt yang sudah dipasangkan dengan contoh input/output, panduan pemakaian, FAQ, premium PDF handbook, dan QC scorecard. Semua file dikirim sebagai file digital, dengan upload manual oleh seller. Tidak ada klaim penjualan, viral, atau approval marketplace.`
-      : `${seller.confirmed_product_description}\n\nThis pack helps ${seller.audience} build ${seller.niche} workflows using ${seller.prompt_count} prompts paired with worked examples, usage guide, FAQ, a premium PDF handbook, and a QC scorecard. Files are delivered digitally and listed manually by the seller. No sales/viral/marketplace approval claims are made.`,
-    "",
-    `**Keywords / Tags:** ${v.lang === "id" ? "prompt pack, prompt AI, " : "ai prompts, prompt pack, "}${seller.niche.toLowerCase()}, ${adapter.toLowerCase().replace(/_/g, " ")}, ${p.toLowerCase()}`,
-    `**Suggested Category:** Digital Goods / Templates / AI Prompts`,
-    "",
-    "**Upload Checklist:**",
-    "- [ ] Cover image disiapkan sesuai brief.",
-    "- [ ] Buyer ZIP atau link delivery tested.",
-    "- [ ] Description direview tanpa klaim terlarang.",
-    "- [ ] Tags / category dipilih sesuai aturan platform.",
-    "- [ ] License & disclaimer disertakan.",
-    "- [ ] Kebijakan platform terbaru sudah dicek.",
-    "",
-    "**Recommended Image Order:**",
-    "1. Hero cover (title + subtitle + 3 benefit bullets)",
-    "2. File map mockup (preview isi folder)",
-    "3. PromptBook page preview",
-    "4. Sample Input/Output preview",
-    "5. PDF Handbook cover preview",
-    "",
-    `**Platform-Specific Positioning:** ${v.tone}.`,
-    "",
-  ].join("\n");
+  const mp = normalizeMarketplace(platform);
+  const def = Object.values(MARKETPLACE_MODULES).find((m) => m.marketplace === mp);
+  if (!def) return `_Listing untuk ${mp} belum tersedia._`;
+  const content = marketplaceListing(def.file, seller, adapter, [mp]);
+  const preview = content.split("\n").slice(0, 24).join("\n");
+  return [`\n### ${mp} — Listing Preview`, "```markdown", preview, "...", "```"].join("\n");
 }
 
 function sellerMasterToolkit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
@@ -2192,8 +2206,126 @@ export function runQC(args: {
   add(QC_CHECK_IDS.MANIFEST_JSON_VALID, "Product Manifest JSON valid", manifestValid ? "PASS" : "FAIL", manifestValid ? "Manifest v2 valid." : "Manifest JSON invalid atau bukan schema v2.", 8);
   const pdfDraft = byFile("20_Complete_PDF_Product_Draft.md");
   add("PDF_DRAFT_BUYER_READY", "PDF draft buyer-ready", pdfDraft?.content && pdfDraft.content.length > 4000 && findBuyerLeaks(pdfDraft.content).length === 0 && !/Insert content from|Aplikasi belum membuat binary PDF otomatis/i.test(pdfDraft.content) ? "PASS" : "FAIL", "PDF draft harus lengkap, bukan placeholder.", 8);
+  // -------------------------------------------------------------------------
+  // MARKETPLACE QC — applied only to public listing files.
+  // Seller/admin files are excluded from this guard.
+  // -------------------------------------------------------------------------
+  const SELLER_ADMIN_EXEMPT = new Set([
+    SELLER_TOOLKIT_FILE,
+    MARKETPLACE_BUNDLE_MODULE.file,
+    "12_Product_Manifest.json",
+    "QC_Scorecard.md",
+  ]);
+
+  const mpFiles = modules.filter((m) =>
+    Object.values(MARKETPLACE_MODULES).some((d) => d.file === m.file_name) &&
+    !SELLER_ADMIN_EXEMPT.has(m.file_name)
+  );
+
+  const mpLeaks = mpFiles.filter((m) => findMarketplaceLeaks(m.content || "").length > 0);
+  add(
+    "MARKETPLACE_NO_LEAKAGE",
+    "Listing marketplace bebas internal/legacy wording",
+    mpLeaks.length ? "FAIL" : "PASS",
+    mpLeaks.length ? `Leakage di: ${mpLeaks.map((m) => m.file_name).join(", ")}` : "Semua listing marketplace bersih.",
+    10
+  );
+
+  const idRx = /\b(isi paket|pengiriman|cocok untuk|manfaat utama|cara pakai|catatan penting|faq|faq pembeli|unduh|produk|paket|pembeli)\b/i;
+  const enRx = /\b(included files|delivery|best for|how it works|limitations|safe use|item title|item overview|key features|what you get|what['’]?s included)\b/i;
+  const langProblems: string[] = [];
+  for (const m of mpFiles) {
+    const isIDFile = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
+    const isENFile = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
+    const c = m.content || "";
+    if (isIDFile && !idRx.test(c)) langProblems.push(`${m.file_name} seharusnya Bahasa Indonesia`);
+    if (isENFile && !enRx.test(c)) langProblems.push(`${m.file_name} seharusnya English`);
+  }
+  add(
+    "MARKETPLACE_LANGUAGE_ROUTING",
+    "Bahasa listing sesuai platform",
+    langProblems.length ? "FAIL" : "PASS",
+    langProblems.length ? langProblems.join("; ") : "Setiap listing menggunakan bahasa sesuai platform.",
+    8
+  );
+
+  const normWords = (str: string) =>
+    new Set((str || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length > 3));
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    for (const word of a) if (b.has(word)) inter++;
+    return inter / (a.size + b.size - inter);
+  };
+  let maxSim = 0;
+  let simPair = "";
+  for (let i = 0; i < mpFiles.length; i++) {
+    for (let j = i + 1; j < mpFiles.length; j++) {
+      const sim = jaccard(normWords(mpFiles[i].content || ""), normWords(mpFiles[j].content || ""));
+      if (sim > maxSim) {
+        maxSim = sim;
+        simPair = `${mpFiles[i].file_name} vs ${mpFiles[j].file_name}`;
+      }
+    }
+  }
+  add(
+    "MARKETPLACE_NO_NEAR_DUPLICATES",
+    "Listing antar platform tidak near-duplicate",
+    mpFiles.length < 2 || maxSim <= 0.72 ? "PASS" : "FAIL",
+    mpFiles.length < 2
+      ? "Hanya 1 listing, tidak perlu cek duplikat."
+      : maxSim <= 0.72
+        ? `Similarity tertinggi: ${(maxSim * 100).toFixed(0)}% — aman.`
+        : `Near-duplicate: ${simPair} (${(maxSim * 100).toFixed(0)}%). Perlu platform-specific copy.`,
+    10
+  );
+
+  const structProblems: string[] = [];
+  for (const m of mpFiles) {
+    const c = m.content || "";
+    const isID = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
+    const isEN = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
+    if (isID) {
+      if (!/##\s*(isi paket|isi paket digital|yang anda dapatkan)/i.test(c)) structProblems.push(`${m.file_name}: missing Isi Paket/Yang Anda Dapatkan`);
+      if (!/##\s*(faq|pertanyaan)/i.test(c)) structProblems.push(`${m.file_name}: missing FAQ`);
+      if (!/##\s*(pengiriman|cta)/i.test(c)) structProblems.push(`${m.file_name}: missing Pengiriman/CTA`);
+    }
+    if (isEN) {
+      if (!/##\s*(included files|what you get|what['’]?s included)/i.test(c)) structProblems.push(`${m.file_name}: missing Included Files/What You Get`);
+      if (!/##\s*(delivery)/i.test(c)) structProblems.push(`${m.file_name}: missing Delivery`);
+      if (!/##\s*(limitations|safe use|important)/i.test(c)) structProblems.push(`${m.file_name}: missing Limitations/Safe Use`);
+    }
+  }
+  add(
+    "MARKETPLACE_STRUCTURE_COMPLETE",
+    "Struktur listing marketplace lengkap",
+    structProblems.length ? "FAIL" : "PASS",
+    structProblems.length ? structProblems.join("; ") : "Semua listing punya seksi wajib.",
+    6
+  );
+
+  const pdfModule = modules.find((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
+  const pdfText = pdfModule?.content || "";
+  const pdfLeaks = findMarketplaceLeaks(pdfText);
+  add(
+    "PDF_SOURCE_CLEAN",
+    "PDF source bebas internal/seller wording",
+    pdfLeaks.length ? "FAIL" : "PASS",
+    pdfLeaks.length ? `Term terlarang di PDF source: ${pdfLeaks.slice(0, 4).join(", ")}` : "PDF source bersih dari wording internal.",
+    8
+  );
+  const pdfH1 = (pdfText.match(/^#\s+/gm) || []).length;
+  const pdfDeep = pdfText.length > 4000 && pdfH1 >= 8;
+  add(
+    "PDF_PREMIUM_DEPTH",
+    "PDF playbook cukup tebal dan terstruktur",
+    pdfDeep ? "PASS" : "FAIL",
+    pdfDeep ? `PDF: ${pdfText.length} char, ${pdfH1} section H1.` : `PDF terlalu tipis (${pdfText.length} char, ${pdfH1} section H1, butuh >4000 char & ≥8 section).`,
+    6
+  );
+
   const score = Math.min(100, Math.round(checks.reduce((sum, check) => sum + (check.status === "PASS" ? check.weight : check.status === "WARNING" ? check.weight * 0.5 : 0), 0)));
-  const blockingIds = new Set(["PPA_V2_FILES_COMPLETE", "NO_IGNORED_LEGACY_FILES", "BUYER_CONTENT_CLEAN", QC_CHECK_IDS.NO_API_MODULES, QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, QC_CHECK_IDS.PROMPT_COUNT_MATCHES, QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV_HEADER_VALID", "PDF_DRAFT_BUYER_READY", QC_CHECK_IDS.MANIFEST_JSON_VALID, "all_modules_acked"]);
+  const blockingIds = new Set(["PPA_V2_FILES_COMPLETE", "NO_IGNORED_LEGACY_FILES", "BUYER_CONTENT_CLEAN", QC_CHECK_IDS.NO_API_MODULES, QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, QC_CHECK_IDS.PROMPT_COUNT_MATCHES, QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV_HEADER_VALID", "PDF_DRAFT_BUYER_READY", QC_CHECK_IDS.MANIFEST_JSON_VALID, "all_modules_acked", "MARKETPLACE_NO_LEAKAGE", "MARKETPLACE_LANGUAGE_ROUTING", "MARKETPLACE_NO_NEAR_DUPLICATES", "PDF_SOURCE_CLEAN"]);
   const blocking = checks.filter((check) => check.status === "FAIL" && blockingIds.has(check.id));
   return { score, status: scoreStatus(score), blocking_errors: blocking.length, errors: blocking.map((check) => check.message || check.name), warnings: checks.filter((check) => check.status === "WARNING" || (check.status === "FAIL" && !blockingIds.has(check.id))).map((check) => check.message || check.name), checks, approval_enabled: score >= QC_THRESHOLDS.PREMIUM_MIN && blocking.length === 0, generated_at: new Date().toISOString() };
 }
@@ -2207,5 +2339,13 @@ export function generateRunRequestId(): string {
 }
 
 export function safeMarketplaces(mps: string[]): string[] {
-  return mps.filter((m) => MARKETPLACES.includes(m as never) && !isForbiddenModuleKey(String(m)));
+  const seen = new Set<string>();
+  return (mps ?? [])
+    .map((m) => normalizeMarketplace(String(m)))
+    .filter((m) => MARKETPLACES.includes(m as never) && !isForbiddenModuleKey(String(m)))
+    .filter((m) => {
+      if (seen.has(m)) return false;
+      seen.add(m);
+      return true;
+    });
 }
