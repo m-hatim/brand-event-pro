@@ -1,6 +1,7 @@
 // src/lib/runner/pdf.ts
 // Buyer-facing premium PDF generator. No seller/internal wording.
 // Pure-ish: only uses jsPDF (browser). No secrets, no API.
+
 import jsPDF from "jspdf";
 
 export interface HandbookMeta {
@@ -13,8 +14,8 @@ export interface HandbookMeta {
   language?: string; // "Indonesia" | "English" | "Bilingual"
 }
 
-// Words that must NEVER appear in any buyer-facing PDF text.
-const FORBIDDEN_PDF_TERMS: RegExp[] = [
+// ✅ FORBIDDEN_PDF_TERMS — Hardened buyer PDF guard
+export const FORBIDDEN_PDF_TERMS: RegExp[] = [
   /manual upload only/i,
   /seller review required/i,
   /seller-reviewed/i,
@@ -55,17 +56,21 @@ const FORBIDDEN_PDF_TERMS: RegExp[] = [
   /upload manual saja/i,
 ];
 
+// ✅ scrubLine — Double-pass (defensive)
 function scrubLine(line: string): string {
   let out = line || "";
+  // PASS 1 — Replace forbidden terms
   for (const rx of FORBIDDEN_PDF_TERMS) {
     rx.lastIndex = 0;
     out = out.replace(rx, "");
   }
+  // PASS 2 — Second pass (extra safety)
   for (const rx of FORBIDDEN_PDF_TERMS) {
     rx.lastIndex = 0;
     out = out.replace(rx, "");
   }
-  return out.replace(/\s{2,}/g, " ").replace(/^[\s•\-–—]+$/g, "").trimEnd();
+  // Cleanup whitespace dan bullet remnants
+  return out.replace(/\s{2,}/g, " ").replace(/^[\[\s•\-–—]+$/g, "").trimEnd();
 }
 
 function buyerFooterLabel(meta: HandbookMeta): string {
@@ -80,41 +85,48 @@ type Block =
   | { type: "code"; text: string }
   | { type: "spacer" };
 
-function parseMarkdownToBlocks(md: string): Block[] {
+function parseMarkdownToBlocks(markdown: string): Block[] {
+  const lines = (markdown || "").split(/\r?\n/);
   const blocks: Block[] = [];
-  const lines = (md || "").split(/\r?\n/);
-  let inCode = false;
-  let codeBuf: string[] = [];
-  for (const raw of lines) {
-    const line = raw ?? "";
-    if (/^```/.test(line.trim())) {
-      if (inCode) {
-        blocks.push({ type: "code", text: scrubLine(codeBuf.join("\n")) });
-        codeBuf = [];
-        inCode = false;
+  let inCodeBlock = false;
+  let codeBuffer = "";
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+
+    if (trimmed.startsWith("```")) {
+      if (inCodeBlock) {
+        blocks.push({ type: "code", text: codeBuffer.trim() });
+        codeBuffer = "";
+        inCodeBlock = false;
       } else {
-        inCode = true;
+        inCodeBlock = true;
       }
       continue;
     }
-    if (inCode) {
-      codeBuf.push(line);
+
+    if (inCodeBlock) {
+      codeBuffer += line + "\n";
       continue;
     }
-    const scrubbed = scrubLine(line);
-    if (!scrubbed.trim()) {
+
+    if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+      blocks.push({ type: "h1", text: scrubLine(trimmed.slice(2).trim()) });
+    } else if (trimmed.startsWith("## ")) {
+      blocks.push({ type: "h2", text: scrubLine(trimmed.slice(3).trim()) });
+    } else if (trimmed.match(/^[-*•]\s+/)) {
+      blocks.push({ type: "li", text: scrubLine(trimmed.replace(/^[-*•]\s+/, "")) });
+    } else if (trimmed.length > 0) {
+      blocks.push({ type: "p", text: scrubLine(trimmed) });
+    } else if (blocks.length > 0 && blocks[blocks.length - 1].type !== "spacer") {
       blocks.push({ type: "spacer" });
-      continue;
     }
-    if (/^#\s+/.test(scrubbed)) blocks.push({ type: "h1", text: scrubbed.replace(/^#\s+/, "") });
-    else if (/^#{2,}\s+/.test(scrubbed)) blocks.push({ type: "h2", text: scrubbed.replace(/^#{2,}\s+/, "") });
-    else if (/^[-*]\s+/.test(scrubbed)) blocks.push({ type: "li", text: scrubbed.replace(/^[-*]\s+/, "").replace(/^\[\s?\]\s*/, "") });
-    else blocks.push({ type: "p", text: scrubbed.replace(/\*\*/g, "") });
   }
-  if (inCode && codeBuf.length) blocks.push({ type: "code", text: scrubLine(codeBuf.join("\n")) });
+
   return blocks;
 }
 
+// ✅ generateProductHandbookPdf — Buyer-safe PDF generator
 export function generateProductHandbookPdf(markdown: string, meta: HandbookMeta): Blob {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -175,45 +187,43 @@ export function generateProductHandbookPdf(markdown: string, meta: HandbookMeta)
   doc.setTextColor(0);
   newPage();
 
-  // ---------- Body ----------
+  // ---------- Content pages ----------
   const blocks = parseMarkdownToBlocks(markdown);
+
   for (const b of blocks) {
-    if (b.type === "spacer") { y += 6; continue; }
-    if (b.type === "h1") {
-      ensure(40);
-      if (y > marginTop + 4) newPage();
+    if (b.type === "spacer") {
+      y += 6;
+    } else if (b.type === "h1") {
+      ensure(32);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
+      doc.setFontSize(16);
       doc.setTextColor(17, 24, 39);
       const lines = doc.splitTextToSize(b.text, contentW);
       doc.text(lines, marginX, y);
-      y += lines.length * 22 + 8;
-      doc.setDrawColor(220);
-      doc.line(marginX, y, marginX + contentW, y);
-      y += 14;
+      y += lines.length * 20 + 12;
       doc.setTextColor(0);
     } else if (b.type === "h2") {
-      ensure(28);
+      ensure(24);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(31, 41, 55);
+      doc.setFontSize(12);
+      doc.setTextColor(55, 65, 81);
       const lines = doc.splitTextToSize(b.text, contentW);
       doc.text(lines, marginX, y);
-      y += lines.length * 17 + 6;
+      y += lines.length * 14 + 6;
       doc.setTextColor(0);
     } else if (b.type === "li") {
+      ensure(16);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
       const lines = doc.splitTextToSize(b.text, contentW - 16);
-      ensure(lines.length * 14 + 2);
       doc.text("•", marginX, y);
-      doc.text(lines, marginX + 14, y);
+      doc.text(lines, marginX + 12, y);
       y += lines.length * 14 + 3;
     } else if (b.type === "code") {
+      ensure(24);
       doc.setFont("courier", "normal");
       doc.setFontSize(9);
       const lines = doc.splitTextToSize(b.text, contentW - 16);
-      ensure(lines.length * 12 + 12);
       doc.setFillColor(243, 244, 246);
       doc.rect(marginX, y - 10, contentW, lines.length * 12 + 14, "F");
       doc.setTextColor(55);
@@ -229,7 +239,19 @@ export function generateProductHandbookPdf(markdown: string, meta: HandbookMeta)
       y += lines.length * 14 + 6;
     }
   }
-  drawFooter();
 
+  drawFooter();
   return doc.output("blob");
+}
+
+// ✅ Helper untuk verify PDF aman dari leakage (dipanggil sebelum export)
+export function verifyPdfSourceClean(pdfSourceMd: string): { ok: boolean; violations: string[] } {
+  const violations: string[] = [];
+  for (const rx of FORBIDDEN_PDF_TERMS) {
+    rx.lastIndex = 0;
+    if (rx.test(pdfSourceMd)) {
+      violations.push(rx.source);
+    }
+  }
+  return { ok: violations.length === 0, violations };
 }
