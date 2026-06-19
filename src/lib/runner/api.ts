@@ -9,17 +9,17 @@ import {
   generateModuleContent,
   generateSyncedManifestContent,
   generateRunRequestId,
+  detectProductIntent,
+  generateProductStrategy,
+  calculateCommercialReadiness,
   runQC,
   safeMarketplaces,
   seedAssumptions,
-  computeCommercialReadiness,
-  findBuyerLeaks,
 } from "./engine";
 import {
   QC_THRESHOLDS,
-  FINAL_BUYER_MODULES,
-  SELLER_TOOLKIT_FILE,
-  ADMIN_MODULES,
+  REQUIRED_CORE_MODULES,
+  IGNORED_LEGACY_MODULES,
   RunStatus,
   isForbiddenModuleKey,
 } from "./types";
@@ -363,6 +363,10 @@ async function runAndPersistQC(runId: string, bundleBefore: Bundle) {
     anchors: latest.seller.key_anchors ?? [],
     confirmedDescription: latest.seller.confirmed_product_description ?? "",
     marketplaces: latest.run.marketplaces ?? [],
+    adapter: latest.run.adapter,
+    niche: latest.seller.niche ?? "",
+    brand: latest.seller.brand ?? "",
+    audience: latest.seller.audience ?? "",
   });
 
   const seller = makeGenerationSeller(latest);
@@ -420,9 +424,11 @@ export async function generateAllRemainingFilesWithProgress(
   if (!bundle.manifest || !bundle.seller || !bundle.run) throw new Error("Manifest belum dibuat.");
 
   const payload = bundle.manifest.payload as any;
-  const mustHave = [...FINAL_BUYER_MODULES, SELLER_TOOLKIT_FILE, ...ADMIN_MODULES];
-  const missingCore = mustHave.filter((file) => !expectedFiles(payload).includes(file));
-  if (missingCore.length) throw new Error(`Manifest belum PPA v2. Klik Build Manifest ulang. Missing: ${missingCore.join(", ")}`);
+  const expectedFromManifest = expectedFiles(payload);
+  const expectedV2 = REQUIRED_CORE_MODULES.map((m) => m.file);
+  const missingCore = expectedV2.filter((file) => !expectedFromManifest.includes(file));
+  const legacyInManifest = expectedFromManifest.filter((file) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(file));
+  if (missingCore.length || legacyInManifest.length) throw new Error(`Manifest belum PPA v2 clean. Klik Build Manifest ulang. Missing: ${missingCore.join(", ") || "-"}. Legacy: ${legacyInManifest.join(", ") || "-"}`);
 
   await supabase.from("runs").update({ status: "CHUNK_RUNNING" as RunStatus }).eq("id", runId);
 
@@ -503,42 +509,42 @@ export async function approvePackage(runId: string) {
   const latest = await runAndPersistQC(runId, bundle);
   const refreshed = await getRunBundle(runId);
   const messages = approvalDiagnostics(refreshed);
-
-  if (latest.qc.score < QC_THRESHOLDS.PREMIUM_MIN) {
-    messages.push(`Technical QC ${latest.qc.score} < ${QC_THRESHOLDS.PREMIUM_MIN}.`);
-  }
-  if (latest.qc.blocking_errors > 0) {
-    messages.push(`Masih ada ${latest.qc.blocking_errors} blocking error.`);
-  }
-
-  const leakingFiles = (refreshed.modules as any[])
-    .filter((m) => (FINAL_BUYER_MODULES as readonly string[]).includes(m.file_name))
-    .filter((m) => findBuyerLeaks(m.content || "").length > 0)
-    .map((m) => m.file_name);
-  if (leakingFiles.length) messages.push(`Buyer leakage di: ${leakingFiles.join(", ")}.`);
-
-  const legacy = (refreshed.modules as any[]).filter((m) =>
-    ["06_QualityChecklist.md","07_License_Disclaimer.md","08_ManualUploadGuide.md","10_Pricing_Recommendation.md","11_Thumbnail_Brief.md","13_Ready_to_Upload_Checklist.md","14_Cover_Generation_Brief.md","15_Marketing_Video_CTA_Prompt.md","21_Marketplace_Upload_Asset_Kit.md","99_Assumption_Register.md"].includes(m.file_name)
-  );
-  if (legacy.length) messages.push(`Legacy files terdeteksi: ${legacy.map((m: any) => m.file_name).join(", ")}.`);
-
-  const pdfDraft = (refreshed.modules as any[]).find((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
-  const pdfOk = pdfDraft?.content && String(pdfDraft.content).length > 4000 && findBuyerLeaks(pdfDraft.content).length === 0;
-  if (!pdfOk) messages.push("Premium PDF validation gagal: terlalu tipis atau mengandung internal wording.");
-
-  const readiness = computeCommercialReadiness({
-    promptCount: refreshed.seller?.prompt_count ?? 10,
-    modules: refreshed.modules as any[],
+  const seller = refreshed.seller ?? bundle.seller;
+  const run = refreshed.run ?? bundle.run;
+  const intent = detectProductIntent({
+    productName: seller?.brand || "",
+    niche: seller?.niche || "",
+    targetAudience: seller?.audience || "",
+    description: seller?.confirmed_product_description || "",
+    selectedAdapter: run?.adapter || "CUSTOM",
+    promptCount: seller?.prompt_count || 10,
   });
-  if (!readiness.passed) {
-    const failed = readiness.checks.filter((check) => !check.ok).map((check) => check.id).join(", ");
-    messages.push(`Commercial readiness ${readiness.score} < 85. Gagal: ${failed}.`);
+  const strategy = generateProductStrategy({
+    productName: seller?.brand || "",
+    niche: seller?.niche || "",
+    audience: seller?.audience || "",
+    description: seller?.confirmed_product_description || "",
+    promptCount: seller?.prompt_count || 10,
+    license: seller?.license || "Personal & Commercial",
+    targetMarket: seller?.target_market || "Indonesia",
+  }, intent);
+  const commercial = calculateCommercialReadiness({
+    intent,
+    strategy,
+    modules: refreshed.modules,
+    marketplaces: refreshed.run?.marketplaces ?? [],
+  });
+  const qcPass = latest.qc.score >= QC_THRESHOLDS.PREMIUM_MIN && latest.qc.blocking_errors === 0;
+  const commercialPass = commercial.overall_commercial_score >= 85;
+  if (messages.length || !qcPass || !commercialPass) {
+    const reasons = [...messages];
+    if (!qcPass) reasons.push(`Technical QC ${latest.qc.score}/${QC_THRESHOLDS.PREMIUM_MIN} belum memenuhi premium gate.`);
+    if (!commercialPass) {
+      reasons.push(`Commercial readiness ${commercial.overall_commercial_score}/85 belum memenuhi gate.`);
+      reasons.push(...commercial.recommendations.slice(0, 3));
+    }
+    throw new Error(`Paket belum bisa PASS_FINAL. ${reasons.join(" ") || "Periksa QC dan Commercial Readiness."}`);
   }
-
-  if (messages.length) {
-    throw new Error(`Paket belum bisa PASS_FINAL. ${messages.join(" ")}`);
-  }
-
   await supabase.from("runs").update({ status: "PASS_FINAL" as RunStatus, approved_at: new Date().toISOString() }).eq("id", runId);
   await supabase.from("exports").insert({
     owner_id: bundle.run.owner_id,
@@ -547,7 +553,8 @@ export async function approvePackage(runId: string) {
       mode: "MANUAL_UPLOAD_ONLY",
       qc_score: latest.qc.score,
       qc_status: latest.qc.status,
-      commercial_readiness: readiness.score,
+      commercial_score: commercial.overall_commercial_score,
+      commercial_level: commercial.readiness_level,
       files: refreshed.modules.map((m) => ({ file: m.file_name, key: m.module_key })),
       approved_at: new Date().toISOString(),
     },
@@ -649,7 +656,10 @@ export async function upgradePackageToSellReady(
   const first = await getRunBundle(runId);
   const payload = first.manifest?.payload as any;
   const expected = expectedKeys(payload);
-  const needsManifest = !first.manifest || [...FINAL_BUYER_MODULES, SELLER_TOOLKIT_FILE, ...ADMIN_MODULES].some((file) => !expected.includes(file.replace(/\.[^.]+$/, "")));
+  const legacyModules = first.modules.filter((m) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(m.file_name));
+  const manifestFiles = expectedFiles(payload);
+  const legacyInManifest = manifestFiles.filter((file) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(file));
+  const needsManifest = !first.manifest || REQUIRED_CORE_MODULES.some((m) => !expected.includes(m.key)) || legacyModules.length > 0 || legacyInManifest.length > 0;
   if (needsManifest) await buildManifest(runId);
   await supabase.from("runs").update({ status: "UPGRADE_IN_PROGRESS" as RunStatus }).eq("id", runId);
   const bundle = await getRunBundle(runId);
@@ -661,6 +671,19 @@ export async function upgradePackageToSellReady(
     return missing || weak;
   });
   return regenerateInternal(runId, targets.length ? targets : bundle.modules, onProgress);
+}
+
+
+export async function autoGeneratePremiumProduct(runId: string, onProgress?: (i: number, total: number, file: string) => void) {
+  await generateArchitectureForRun(runId);
+  let bundle = await getRunBundle(runId);
+  for (const assumption of bundle.assumptions.filter((a) => a.status === "pending")) {
+    await confirmAssumption(assumption.id);
+  }
+  await approveArchitecture(runId);
+  await buildManifest(runId);
+  await generateAllRemainingFilesWithProgress(runId, onProgress, { force: true });
+  return ensureQcArtifactsSynced(runId);
 }
 
 export async function reopenForRegeneration(runId: string) {
