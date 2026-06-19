@@ -79,8 +79,6 @@ export interface ModuleDefinition {
 }
 
 export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
-  // PPA v2 runtime source of truth only.
-  // Legacy files (06, 07, 08, 10, 11, 13, 14, 15, 21, 99) are intentionally excluded.
   { key: "01_Product_Brief", file: "01_Product_Brief.md", chunks: 1, category: "core" },
   { key: "02_PromptBook", file: "02_PromptBook.md", chunks: 1, category: "core" },
   { key: "03_PromptLibrary", file: "03_PromptLibrary.csv", chunks: 1, category: "core" },
@@ -97,16 +95,15 @@ export const REQUIRED_CORE_MODULES: ModuleDefinition[] = [
 export const REQUIRED_CORE_FILES = REQUIRED_CORE_MODULES.map((m) => m.file);
 export const REQUIRED_CORE_KEYS = REQUIRED_CORE_MODULES.map((m) => m.key);
 
-export const MARKETPLACE_MODULES: Record<Marketplace, ModuleDefinition> = {
+export const MARKETPLACE_MODULES: Record<string, ModuleDefinition> = {
   Shopee: { key: "16_Shopee_Product_Listing_ID", file: "16_Shopee_Product_Listing_ID.md", chunks: 1, category: "marketplace", marketplace: "Shopee" },
   Tokopedia: { key: "17_Tokopedia_Product_Listing_ID", file: "17_Tokopedia_Product_Listing_ID.md", chunks: 1, category: "marketplace", marketplace: "Tokopedia" },
   "Lynk.id": { key: "18_LynkID_Sales_Page_ID", file: "18_LynkID_Sales_Page_ID.md", chunks: 1, category: "marketplace", marketplace: "Lynk.id" },
   Gumroad: { key: "06_Gumroad_Listing", file: "06_Gumroad_Listing.md", chunks: 1, category: "marketplace", marketplace: "Gumroad" },
   Etsy: { key: "07_Etsy_Listing", file: "07_Etsy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Etsy" },
+  Payhip: { key: "08_Payhip_Listing", file: "08_Payhip_Listing.md", chunks: 1, category: "marketplace", marketplace: "Payhip" },
   Envato: { key: "22_Envato_Listing", file: "22_Envato_Listing.md", chunks: 1, category: "marketplace", marketplace: "Envato" },
   LemonSqueezy: { key: "23_LemonSqueezy_Listing", file: "23_LemonSqueezy_Listing.md", chunks: 1, category: "marketplace", marketplace: "LemonSqueezy" },
-  Payhip: { key: "08_Payhip_Listing", file: "08_Payhip_Listing.md", chunks: 1, category: "marketplace", marketplace: "Payhip" },
-  "Lemon Squeezy": { key: "09_LemonSqueezy_Listing", file: "09_LemonSqueezy_Listing.md", chunks: 1, category: "marketplace", marketplace: "Lemon Squeezy" },
 };
 
 export const MARKETPLACE_BUNDLE_MODULE: ModuleDefinition = {
@@ -137,17 +134,27 @@ export const QC_CHECK_IDS = {
   LICENSE_EXISTS: "license_exists",
   PRICING_MARKED_HEURISTIC: "pricing_marked_heuristic",
   MARKETPLACE_FAQ_AND_DELIVERY: "marketplace_faq_and_delivery",
-  MARKETPLACE_NO_LEAKAGE: "MARKETPLACE_NO_LEAKAGE",
-  MARKETPLACE_LANGUAGE_ROUTING: "MARKETPLACE_LANGUAGE_ROUTING",
-  MARKETPLACE_NO_NEAR_DUPLICATES: "MARKETPLACE_NO_NEAR_DUPLICATES",
-  MARKETPLACE_STRUCTURE_COMPLETE: "MARKETPLACE_STRUCTURE_COMPLETE",
-  PDF_SOURCE_CLEAN: "PDF_SOURCE_CLEAN",
-  PDF_PREMIUM_DEPTH: "PDF_PREMIUM_DEPTH",
   MANIFEST_JSON_VALID: "manifest_json_valid",
   ASSUMPTION_REGISTER_EXISTS: "assumption_register_exists",
   QC_SCORECARD_EXISTS: "qc_scorecard_exists",
   MANUAL_UPLOAD_DISCLAIMER: "manual_upload_disclaimer",
   ANCHOR_REFLECTION: "anchor_reflection",
+  BUYER_CONTENT_NO_SELLER_LEAKAGE: "buyer_content_no_seller_leakage",
+  NO_IGNORED_LEGACY_FILES: "no_ignored_legacy_files",
+  CSV_HEADER_VALID: "csv_header_valid",
+  PDF_DRAFT_REQUIRED_SECTIONS: "pdf_draft_required_sections",
+  PDF_MINIMUM_CONTENT_LENGTH: "pdf_minimum_content_length",
+  SELLER_TOOLKIT_EXISTS: "seller_toolkit_exists",
+  SELLER_TOOLKIT_HAS_PRICING: "seller_toolkit_has_pricing",
+  SELLER_TOOLKIT_HAS_PLATFORM_LISTINGS: "seller_toolkit_has_platform_listings",
+  PROMPTBOOK_PREMIUM_DEPTH: "promptbook_premium_depth",
+  ADAPTER_INTENT_MATCH: "adapter_intent_match",
+  MARKETPLACE_COPY_DIFFERENTIATED: "marketplace_copy_differentiated",
+  MARKETPLACE_NO_LEAKAGE: "marketplace_no_leakage",
+  MARKETPLACE_LANGUAGE_ROUTING: "marketplace_language_routing",
+  MARKETPLACE_NO_NEAR_DUPLICATES: "marketplace_no_near_duplicates",
+  MARKETPLACE_STRUCTURE_COMPLETE: "marketplace_structure_complete",
+  PDF_SOURCE_CLEAN: "pdf_source_clean",
 } as const;
 export type QCCheckId = (typeof QC_CHECK_IDS)[keyof typeof QC_CHECK_IDS];
 
@@ -172,6 +179,7 @@ export interface QCResult {
 }
 
 export interface ProductManifestPayload {
+  architecture: typeof PPA_V2_VERSION;
   mode: "MANUAL_UPLOAD_ONLY";
   api_disabled: true;
   no_api_modules: true;
@@ -181,18 +189,20 @@ export interface ProductManifestPayload {
   release_date: string;
   adapter: string;
   language: string;
+  target_market?: string;
   niche: string;
   license: string;
   marketplaces: string[];
   prompt_count: number;
-  architecture?: string;
-  target_market?: string;
   files: {
-    buyer?: string[];
-    seller?: string[];
-    admin?: string[];
-    core: string[];
-    marketplace: string[];
+    buyer: string[];
+    seller: string[];
+    admin: string[];
+  };
+  exports: {
+    buyer_zip: string;
+    seller_zip: string;
+    full_zip: string;
   };
   expected_modules: ModuleDefinition[];
   expected_chunks: number;
@@ -302,6 +312,11 @@ export const FINAL_BUYER_MODULES = [
   "QC_Scorecard.md",
 ] as const;
 
+export const FINAL_BUYER_FILES = [
+  ...FINAL_BUYER_MODULES,
+  "Product_Handbook.pdf",
+] as const;
+
 export const SELLER_TOOLKIT_FILE = "00_Seller_Master_Toolkit.md" as const;
 
 export const ADMIN_MODULES = [
@@ -320,7 +335,51 @@ export const IGNORED_LEGACY_MODULES = [
   "15_Marketing_Video_CTA_Prompt.md",
   "21_Marketplace_Upload_Asset_Kit.md",
   "99_Assumption_Register.md",
-];
+] as const;
+
+
+export type ProductIntentId =
+  | "CONTENT_REPURPOSING"
+  | "CONTENT_CREATION"
+  | "TEXT_TO_IMAGE_SYSTEM"
+  | "RESEARCH_SYSTEM"
+  | "ACADEMIC_WRITING_SYSTEM"
+  | "BUSINESS_MARKETING_SYSTEM"
+  | "DUE_DILIGENCE_SYSTEM"
+  | "GENERAL_PROMPT_PACK";
+
+export interface ProductIntent {
+  intent: ProductIntentId;
+  confidence: number;
+  secondary_intent?: ProductIntentId;
+  detected_keywords: string[];
+  ambiguity_warning?: string;
+  recommended_adapter: string;
+  mismatch_warning?: string;
+}
+
+export interface ProductStrategy {
+  category: string;
+  buyer_transformation: string;
+  core_promise: string;
+  target_buyer_pain: string;
+  recommended_format: string;
+  prompt_categories: string[];
+  premium_differentiation: string;
+  risk_notes: string[];
+  marketplace_positioning: string;
+}
+
+export interface CommercialReadinessScore {
+  positioning_score: number;
+  prompt_depth_score: number;
+  pdf_premium_score: number;
+  marketplace_copy_score: number;
+  buyer_value_score: number;
+  overall_commercial_score: number;
+  readiness_level: "WEAK" | "USABLE" | "GOOD" | "PREMIUM";
+  recommendations: string[];
+}
 
 // Normalize legacy marketplace display strings to v2 canonical names.
 export function normalizeMarketplace(name: string): string {
