@@ -16,20 +16,21 @@ import {
   QCCheckItem,
   QCResult,
   REQUIRED_CORE_MODULES,
+  isForbiddenModuleKey,
+  normalizeMarketplace,
+  SELLER_TOOLKIT_FILE,
+  FINAL_BUYER_FILES,
   FINAL_BUYER_MODULES,
   ADMIN_MODULES,
   IGNORED_LEGACY_MODULES,
   PPA_V2_VERSION,
-  isForbiddenModuleKey,
-  normalizeMarketplace,
-  SELLER_TOOLKIT_FILE,
+  ProductIntent,
+  ProductIntentId,
+  ProductStrategy,
+  CommercialReadinessScore,
 } from "./types";
 
-export const CORE_MODULES = [
-  ...FINAL_BUYER_MODULES.map((file) => ({ key: file.replace(/\.[^.]+$/, ""), file, chunks: 1, category: file === "QC_Scorecard.md" ? "qc" : "core" as const })),
-  { key: "00_Seller_Master_Toolkit", file: SELLER_TOOLKIT_FILE, chunks: 1, category: "core" as const },
-  ...ADMIN_MODULES.map((file) => ({ key: file.replace(/\.[^.]+$/, ""), file, chunks: 1, category: "core" as const })),
-];
+export const CORE_MODULES = REQUIRED_CORE_MODULES;
 
 // ---------- Typo normalization ----------
 const TYPO_MAP: Array<[RegExp, string]> = [
@@ -72,123 +73,6 @@ export function correctDescription(input: string): string {
   return text;
 }
 
-
-export type OutputLang = "id" | "en" | "bi";
-
-export function resolveOutputLang(language?: string, targetMarket?: string): OutputLang {
-  const lang = (language || "").toLowerCase();
-  const market = (targetMarket || "").toLowerCase();
-  if (lang.includes("bilingual") || market.includes("indonesia + global")) return "bi";
-  if (lang.includes("english") || market === "global") return "en";
-  return "id";
-}
-
-function L(lang: OutputLang, id: string, en: string): string {
-  if (lang === "en") return en;
-  if (lang === "bi") return `${id}\n\n${en}`;
-  return id;
-}
-
-export const BUYER_LEAKAGE_PATTERNS: RegExp[] = [
-  /manual upload only/i,
-  /seller review required/i,
-  /premium product architecture v2/i,
-  /seller toolkit/i,
-  /pricing heuristic/i,
-  /thumbnail brief/i,
-  /cover generation/i,
-  /marketplace draft/i,
-  /upload checklist/i,
-  /approval enabled/i,
-  /blocking errors/i,
-  /PASS_FINAL/i,
-  /\bmanifest\b/i,
-  /insert content from/i,
-  /06_QualityChecklist/i,
-  /07_License_Disclaimer/i,
-  /13_Ready_to_Upload_Checklist/i,
-  /14_Cover_Generation_Brief/i,
-  /15_Marketing_Video_CTA/i,
-  /21_Marketplace_Upload_Asset_Kit/i,
-];
-
-export function findBuyerLeaks(content: string): string[] {
-  const hits: string[] = [];
-  for (const rx of BUYER_LEAKAGE_PATTERNS) if (rx.test(content || "")) hits.push(rx.source);
-  return hits;
-}
-
-// ============================================================================
-// PPA v2 — Marketplace leakage patterns.
-// Applied ONLY to public marketplace listing files, not seller/admin files.
-// ============================================================================
-export const MARKETPLACE_LEAKAGE_PATTERNS: RegExp[] = [
-  /manual upload only/i,
-  /draft ini harus direview/i,
-  /diunggah manual oleh seller/i,
-  /tidak ada api marketplace/i,
-  /tidak ada API marketplace/i,
-  /tidak ada auto-publish/i,
-  /auto-publish/i,
-  /no marketplace api/i,
-  /no auto-publish/i,
-  /seller wajib/i,
-  /seller toolkit/i,
-  /seller master toolkit/i,
-  /marketplace draft/i,
-  /pricing heuristic/i,
-  /pricing recommendation/i,
-  /thumbnail brief/i,
-  /manual upload guide/i,
-  /quality checklist/i,
-  /license disclaimer/i,
-  /cover generation/i,
-  /cover generation brief/i,
-  /upload manual saja/i,
-  /policy reminder/i,
-  /approval enabled/i,
-  /blocking[_ ]errors/i,
-  /PASS_FINAL/i,
-  /06_QualityChecklist/i,
-  /07_License_Disclaimer/i,
-  /08_ManualUploadGuide/i,
-  /10_Pricing_Recommendation/i,
-  /11_Thumbnail_Brief/i,
-  /13_Ready_to_Upload_Checklist/i,
-  /14_Cover_Generation_Brief/i,
-  /15_Marketing_Video_CTA/i,
-  /21_Marketplace_Upload_Asset_Kit/i,
-  /99_Assumption_Register/i,
-  /Insert content from/i,
-  /QC_Scorecard\.md/i,
-  /00_Seller_Master_Toolkit/i,
-  /12_Product_Manifest/i,
-];
-
-export function findMarketplaceLeaks(content: string): string[] {
-  const hits: string[] = [];
-  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
-    rx.lastIndex = 0;
-    if (rx.test(content || "")) hits.push(rx.source);
-  }
-  return hits;
-}
-
-function scrubMarketplaceLeaks(text: string): string {
-  let out = text || "";
-  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
-    rx.lastIndex = 0;
-    out = out.replace(rx, "");
-  }
-  return out
-    .replace(/\s{2,}/g, " ")
-    .replace(/^[\s\-–—•]+$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-export type ResolvedAdapter =
-
 export type ResolvedAdapter =
   | "CODING_AUTOMATION"
   | "TEXT_TO_IMAGE"
@@ -226,8 +110,8 @@ export function resolveAdapter(adapter: string, niche: string): ResolvedAdapter 
   if (/(ready[-\s]?to[-\s]?sell|siap jual|produk siap|productized|launch pack|cover|thumbnail|complete pdf|pdf product|gumroad product|marketplace asset|seller asset|sales asset|cta video|marketing video|product page asset|upload asset)/.test(n)) return "READY_TO_SELL_PRODUCT";
   if (/(handbook|vault|playbook|field guide|guidebook|reference pack|referensi kuat|evidence[-\s]?based handbook|supplement|suplemen|nutrition|nutrisi|fitness|health guide|claim checker|source log|evidence table)/.test(n)) return "EVIDENCE_HANDBOOK";
   if (/(academic|akademik|writing|penulisan|skripsi|tesis|jurnal|paper|laporan kasus|case report|case reflection|keperawatan|medis|medical|clinical|klinis|ners|evidence[-\s]?based)/.test(n)) return "ACADEMIC_WRITING";
-  if (/(riset|research|literatur)/.test(n)) return "RESEARCH";
-  if (/(konten|caption|copywriting|sosial media|content)/.test(n)) return "CONTENT_CREATION";
+  if (/(due\s?diligence|akuisisi|acquisition|validasi usaha|analisis risiko|risk assessment|calon investor|investor kecil|wawancara pemilik|keuangan dasar|dokumen legal|riset|research|literatur)/.test(n)) return "RESEARCH";
+  if (/(repurpose|hook|short[-\s]?form|konten|caption|copywriting|sosial media|content|tiktok|reels|youtube shorts)/.test(n)) return "CONTENT_CREATION";
   if (/(bisnis|marketing|sales|funnel|brand)/.test(n)) return "BUSINESS_MARKETING";
   return "CUSTOM";
 }
@@ -282,14 +166,30 @@ export function generateArchitecture(input: {
   const niche = titleCaseSoft(input.niche || "produk prompt");
   const audience = normalizeText(input.audience || "UMKM dan seller online");
   const marketplaces = input.marketplaces?.length ? input.marketplaces.join(", ") : "marketplace pilihan";
-  const adapter = resolveAdapter(input.adapter || "CUSTOM", niche);
+  const intent = detectProductIntent({
+    productName: brand,
+    niche,
+    targetAudience: audience,
+    description: input.confirmedDescription || "",
+    selectedAdapter: input.adapter || "CUSTOM",
+    promptCount: input.promptCount || 10,
+  });
+  const strategy = generateProductStrategy({
+    productName: brand,
+    niche,
+    audience,
+    description: input.confirmedDescription || "",
+    promptCount: input.promptCount || 10,
+    license: "Personal & Commercial",
+    targetMarket: "Indonesia",
+  }, intent);
   return {
-    product_positioning: `${brand} diposisikan sebagai paket prompt ${adapter} untuk niche "${niche}" dengan tone ${input.tone || "Friendly"}. Fokusnya adalah membuat buyer lebih mudah menyusun output terstruktur, bukan menjanjikan hasil bisnis.`,
-    target_audience_fit: `Audiens utama: ${audience}. Struktur file dibuat agar buyer bisa mulai dari README, lalu PromptBook, Sample Input/Output, Usage Guide, dan Quality Checklist.`,
-    weakness_detection: "Risiko utama: output bisa terlalu generik jika deskripsi, niche, dan target audiens terlalu pendek. Mitigasi: auto-correction, key anchors, sample input/output, testing report, dan QC scorecard.",
-    prompt_architecture_overview: `Manifest wajib menghasilkan ${REQUIRED_CORE_MODULES.length} core file sell-ready, file marketplace hanya untuk ${marketplaces}, dan semua upload tetap manual.`,
-    marketplace_preview: `Draft listing dibuat hanya untuk marketplace yang dipilih: ${marketplaces}. Tidak ada file API_* dan tidak ada klaim auto-publish.`,
-    qc_readiness: `QC menilai kelengkapan file, prompt count, CSV, duplikasi prompt, sample IO, license, pricing heuristic, manifest JSON, assumption register, klaim terlarang, dan score sellability 85/95.`,
+    product_positioning: `${brand} diposisikan sebagai ${strategy.category} untuk niche "${niche}". Fokusnya adalah buyer transformation: ${strategy.buyer_transformation}.`,
+    target_audience_fit: `Audiens utama: ${audience}. Buyer Package adalah produk final untuk pembeli. Seller Toolkit, pricing, listing, thumbnail, cover, dan upload checklist dipisahkan dari Buyer Package.`,
+    weakness_detection: intent.mismatch_warning || intent.ambiguity_warning || "Risiko utama: output bisa terasa generik jika input terlalu pendek. Mitigasi: Product Intent, Product Strategy, PromptBook premium depth, PDF handbook, dan Commercial Readiness Gate.",
+    prompt_architecture_overview: `Premium Product Architecture v2 menghasilkan Buyer Package, Seller Toolkit, dan Admin Manifest. Marketplace: ${marketplaces}. Semua upload tetap manual.`,
+    marketplace_preview: `Marketplace copy dibedakan per platform dan dikonsolidasikan di Seller Master Toolkit. Tidak ada file API_* dan tidak ada auto-publish.`,
+    qc_readiness: `PASS_FINAL membutuhkan technical QC >= ${QC_THRESHOLDS.PREMIUM_MIN}, blocking_errors = 0, dan Commercial Readiness >= 85.`,
   };
 }
 
@@ -303,15 +203,15 @@ export function seedAssumptions(adapter: string) {
 
 export function marketplaceModulesFor(marketplaces: string[]): ModuleDefinition[] {
   const seen = new Set<string>();
-  const selected = (marketplaces ?? [])
-    .map((m) => normalizeMarketplace(String(m)))
-    .filter((m): m is keyof typeof MARKETPLACE_MODULES => Object.prototype.hasOwnProperty.call(MARKETPLACE_MODULES, m))
-    .filter((m) => {
-      if (seen.has(m)) return false;
-      seen.add(m);
-      return true;
-    })
-    .map((m) => MARKETPLACE_MODULES[m]);
+  const selected: ModuleDefinition[] = [];
+  for (const raw of marketplaces) {
+    const mp = normalizeMarketplace(raw);
+    const def = Object.values(MARKETPLACE_MODULES).find((m) => m.marketplace === mp);
+    if (def && !seen.has(def.file)) {
+      seen.add(def.file);
+      selected.push(def);
+    }
+  }
   return selected.length ? [...selected, MARKETPLACE_BUNDLE_MODULE] : [];
 }
 
@@ -326,11 +226,7 @@ export function buildManifestPayload(input: {
   promptCount: number;
   license?: string;
 }): ProductManifestPayload {
-  const buyer = FINAL_BUYER_MODULES.map((file) => ({ key: file.replace(/\.[^.]+$/, ""), file, chunks: 1, category: file === "QC_Scorecard.md" ? "qc" : "core" as const }));
-  const seller = [{ key: "00_Seller_Master_Toolkit", file: SELLER_TOOLKIT_FILE, chunks: 1, category: "core" as const }];
-  const admin = ADMIN_MODULES.map((file) => ({ key: file.replace(/\.[^.]+$/, ""), file, chunks: 1, category: "core" as const }));
-  const marketplace = marketplaceModulesFor(input.marketplaces).map((m) => ({ ...m }));
-  const modules = [...buyer, ...seller, ...admin, ...marketplace].filter((m) => !isForbiddenModuleKey(m.key) && !(IGNORED_LEGACY_MODULES as readonly string[]).includes(m.file));
+  const modules = REQUIRED_CORE_MODULES.map((m) => ({ ...m })).filter((m) => !isForbiddenModuleKey(m.key) && !isForbiddenModuleKey(m.file));
   const productId = input.runId ? `ppf-${input.runId}` : `ppf-${Date.now()}`;
   return {
     architecture: PPA_V2_VERSION,
@@ -346,21 +242,24 @@ export function buildManifestPayload(input: {
     target_market: input.targetMarket || "Indonesia",
     niche: normalizeText(input.niche || ""),
     license: input.license || "Personal & Commercial",
-    marketplaces: input.marketplaces,
+    marketplaces: input.marketplaces.map(normalizeMarketplace),
     prompt_count: Number(input.promptCount) || 10,
     files: {
-      buyer: [...FINAL_BUYER_MODULES, "Product_Handbook.pdf"],
+      buyer: Array.from(FINAL_BUYER_FILES),
       seller: [SELLER_TOOLKIT_FILE],
-      admin: [...ADMIN_MODULES],
-      core: [...FINAL_BUYER_MODULES, SELLER_TOOLKIT_FILE, ...ADMIN_MODULES],
-      marketplace: marketplace.map((m) => m.file),
+      admin: Array.from(ADMIN_MODULES),
+    },
+    exports: {
+      buyer_zip: "premium-product-system_v1.0_buyer.zip",
+      seller_zip: "premium-product-system_v1.0_seller-toolkit.zip",
+      full_zip: "premium-product-system_v1.0_full-system.zip",
     },
     expected_modules: modules,
     expected_chunks: modules.reduce((sum, m) => sum + m.chunks, 0),
     qc_status: "NOT_SELL_READY",
     manual_upload_only: true,
     api_mode_enabled: false,
-  } as ProductManifestPayload;
+  };
 }
 
 export interface PromptSpec {
@@ -916,66 +815,235 @@ function mdList(items: string[]): string {
 }
 
 
-type ProductIntentResult = {
-  intent: "DUE_DILIGENCE_SYSTEM" | "CONTENT_REPURPOSING" | "RESEARCH_SYSTEM" | "TEXT_TO_IMAGE_SYSTEM" | "CONTENT_CREATION" | "GENERAL_PROMPT_PACK";
-  recommendedAdapter: ResolvedAdapter;
-  promptCategories: string[];
-  mismatchWarning?: string;
-};
-
-function detectProductIntentFromInputs(args: { niche: string; description: string; brand: string; audience: string; adapter?: string }): ProductIntentResult {
-  const combined = normalizeText(`${args.niche} ${args.description} ${args.brand} ${args.audience}`).toLowerCase();
-  if (/(due diligence|akuisisi bisnis|akuisisi usaha|membeli bisnis|membeli usaha|business acquisition|risk review|seller interview|business risk|operational risk|financial red flag|acquisition checklist|validasi akuisisi|calon investor)/i.test(combined)) {
-    return { intent: "DUE_DILIGENCE_SYSTEM", recommendedAdapter: "RESEARCH", promptCategories: [
-      "Acquisition Goal Clarifier",
-      "Seller Interview Question Builder",
-      "Business Model Snapshot",
-      "Revenue Verification Checklist",
-      "Operational Risk Mapping",
-      "Customer Dependency Analysis",
-      "Supplier and Vendor Risk Review",
-      "Basic Financial Red Flag Scanner",
-      "Legal Document Question List",
-      "Deal Assumption Register",
-      "Risk Summary Report Builder",
-      "Final Due Diligence Review Checklist",
-    ] };
+export function detectProductIntent(args: {
+  productName: string;
+  niche: string;
+  targetAudience: string;
+  description: string;
+  selectedAdapter: string;
+  promptCount: number;
+}): ProductIntent {
+  const combined = normalizeText(`${args.productName} ${args.niche} ${args.targetAudience} ${args.description}`).toLowerCase();
+  const patterns: Record<ProductIntentId, string[]> = {
+    DUE_DILIGENCE_SYSTEM: ["due diligence", "akuisisi", "acquisition", "beli bisnis", "membeli usaha", "validasi akuisisi", "analisis risiko", "risk assessment", "calon investor", "investor kecil", "wawancara pemilik", "validasi keuangan", "keuangan dasar", "red flag", "dokumen legal", "operasional usaha"],
+    CONTENT_REPURPOSING: ["repurpose", "hook", "short form", "short-form", "tiktok", "reels", "youtube shorts", "caption", "script", "long to short", "konten pendek", "konten viral"],
+    CONTENT_CREATION: ["content creator", "konten", "content", "copywriting", "caption", "post", "newsletter", "carousel", "social media"],
+    TEXT_TO_IMAGE_SYSTEM: ["image generation", "prompt gambar", "gambar", "visual", "design", "thumbnail", "midjourney", "dall", "flux", "stable diffusion", "ai art", "poster"],
+    RESEARCH_SYSTEM: ["riset", "research", "market research", "competitor", "survey", "interview", "data collection", "insight", "analysis", "analisis", "laporan riset", "triangulasi", "sintesis"],
+    ACADEMIC_WRITING_SYSTEM: ["academic", "akademik", "paper", "thesis", "skripsi", "tesis", "citation", "literature review", "jurnal"],
+    BUSINESS_MARKETING_SYSTEM: ["marketing", "sales", "funnel", "offer", "positioning", "brand", "campaign", "objection", "copywriting"],
+    GENERAL_PROMPT_PACK: [],
+  };
+  const scored = Object.entries(patterns).map(([intent, keywords]) => {
+    const matched = keywords.filter((kw) => new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(combined));
+    return { intent: intent as ProductIntentId, score: matched.length, matched };
+  }).sort((a, b) => b.score - a.score);
+  const primary = scored[0]?.score ? scored[0] : { intent: "GENERAL_PROMPT_PACK" as ProductIntentId, score: 0, matched: [] };
+  const secondary = scored[1]?.score && scored[1].score >= Math.max(1, primary.score * 0.45) ? scored[1].intent : undefined;
+  const confidence = Math.min(100, Math.max(45, primary.score * 14));
+  let recommended = args.selectedAdapter || "CUSTOM";
+  let mismatch: string | undefined;
+  if (primary.intent === "DUE_DILIGENCE_SYSTEM" && args.selectedAdapter !== "RESEARCH") {
+    recommended = "RESEARCH";
+    mismatch = `Produk ini terdeteksi sebagai due diligence/research system. Adapter ${args.selectedAdapter} perlu direview; rekomendasi: RESEARCH agar output berisi riset, checklist risiko, wawancara, validasi, dan ringkasan temuan, bukan funnel/sales copy.`;
+  } else if (primary.intent === "CONTENT_REPURPOSING" && args.selectedAdapter === "TEXT_TO_IMAGE") {
+    recommended = "CONTENT_CREATION";
+    mismatch = "Produk ini terdeteksi sebagai content repurposing, tetapi adapter yang dipilih TEXT_TO_IMAGE. Gunakan CONTENT_CREATION agar output berisi hook, script, caption, CTA, dan platform adaptation, bukan prompt gambar.";
+  } else if (primary.intent === "RESEARCH_SYSTEM" && args.selectedAdapter !== "RESEARCH") {
+    recommended = "RESEARCH";
+    mismatch = `Produk ini terdeteksi sebagai research system. Adapter ${args.selectedAdapter} perlu direview; rekomendasi: RESEARCH.`;
+  } else if (primary.intent === "TEXT_TO_IMAGE_SYSTEM" && args.selectedAdapter !== "TEXT_TO_IMAGE") {
+    recommended = "TEXT_TO_IMAGE";
+    mismatch = `Produk ini terdeteksi sebagai text-to-image system. Adapter ${args.selectedAdapter} perlu direview; rekomendasi: TEXT_TO_IMAGE.`;
   }
-  if (/(repurpose|hook|short.?form|short form|tiktok|reels|youtube shorts|instagram shorts|caption|social media|short content|script)/i.test(combined)) {
-    return { intent: "CONTENT_REPURPOSING", recommendedAdapter: "CONTENT_CREATION", promptCategories: ["Hook Generation", "Long-Form to Short-Form Repurposing", "Short-Form Script Builder", "Caption Variants", "CTA Builder", "Platform Adaptation Logic", "Content Batching Strategy", "Audience Angle Finder", "Content Performance Testing", "Final Output QA"] };
-  }
-  if (/(riset|research|market research|competitor analysis|survey|interview|data collection|analysis|insight|report|market sizing|validation)/i.test(combined)) {
-    return { intent: "RESEARCH_SYSTEM", recommendedAdapter: "RESEARCH", promptCategories: ["Research Question Framing", "Source Mapping & Evaluation", "Data Collection Strategy", "Triangulation Methodology", "Interview Guide Builder", "Survey Design Prompt", "Thematic Analysis Workflow", "Insight Synthesis", "Assumption Register Creator", "Research QA & Validation"] };
-  }
-  return { intent: "GENERAL_PROMPT_PACK", recommendedAdapter: resolveAdapter(args.adapter || "CUSTOM", args.niche), promptCategories: ["Prompt System", "Workflow", "QA"] };
+  return {
+    intent: primary.intent,
+    confidence,
+    secondary_intent: secondary,
+    detected_keywords: primary.matched.slice(0, 8),
+    ambiguity_warning: secondary ? `Intent berpotensi campuran: ${primary.intent} + ${secondary}. Review manual sebelum PASS_FINAL.` : undefined,
+    recommended_adapter: recommended,
+    mismatch_warning: mismatch,
+  };
 }
 
-function isDueDiligenceSystem(seller: ReturnType<typeof sellerMeta>): boolean {
-  return detectProductIntentFromInputs({ niche: seller.niche, description: seller.confirmed_product_description, brand: seller.brand, audience: seller.audience }).intent === "DUE_DILIGENCE_SYSTEM";
+export function validateAdapterProductFit(adapter: string, niche: string, description: string, productName: string) {
+  const intent = detectProductIntent({ productName, niche, targetAudience: "", description, selectedAdapter: adapter, promptCount: 10 });
+  return intent.mismatch_warning
+    ? { valid: false, warning: intent.mismatch_warning, suggestion: `Gunakan adapter ${intent.recommended_adapter}.` }
+    : { valid: true };
 }
 
-function dueDiligencePromptSpecs(seller: ReturnType<typeof sellerMeta>, categories: string[]): PromptSpec[] {
-  const cats = categories.slice(0, seller.prompt_count);
-  const vars = ["business_context", "seller_claims", "available_documents", "risk_tolerance", "questions_to_verify"];
-  return cats.map((title, i) => ({
-    id: `dd-${String(i + 1).padStart(2, "0")}`,
-    title,
-    category: "Due Diligence",
-    target_user: seller.audience,
-    use_case: `Membantu buyer menilai aspek ${title.toLowerCase()} sebelum akuisisi bisnis kecil.`,
-    purpose: `Menyusun ${title.toLowerCase()} yang konkret untuk due diligence awal, tanpa memberi nasihat hukum/finansial final.`,
-    when_to_use: i < 3 ? "Di tahap awal screening bisnis yang ingin dibeli." : i < 8 ? "Saat buyer mulai memeriksa klaim penjual dan risiko operasional." : "Sebelum membuat ringkasan risiko dan berdiskusi dengan profesional.",
-    beginner_mode: "Isi konteks bisnis, klaim utama penjual, dokumen yang tersedia, dan hal yang belum jelas. Minta output berupa checklist dan pertanyaan verifikasi.",
-    advanced_mode: "Tambahkan skenario downside, red flag, bukti yang perlu diminta, batasan data, serta pertanyaan lanjutan untuk akuntan/konsultan/hukum.",
-    full_prompt: `Anda adalah analis due diligence awal untuk calon pembeli bisnis kecil. Bantu saya membuat ${title} untuk bisnis berikut:\n\nKonteks bisnis: {{business_context}}\nKlaim penjual: {{seller_claims}}\nDokumen/data tersedia: {{available_documents}}\nToleransi risiko buyer: {{risk_tolerance}}\nPertanyaan yang perlu diverifikasi: {{questions_to_verify}}\n\nBuat output dengan format:\n1. Tujuan pemeriksaan\n2. Data/bukti yang harus diminta\n3. Pertanyaan untuk pemilik bisnis\n4. Red flag yang perlu diwaspadai\n5. Cara verifikasi manual\n6. Ringkasan risiko: rendah/sedang/tinggi beserta alasan\n7. Catatan batasan: ini bukan nasihat hukum, pajak, investasi, atau finansial final.`,
-    input_variables: vars,
-    example_filled_input: "business_context: laundry kiloan dengan 2 cabang kecil; seller_claims: omzet stabil Rp60 juta/bulan; available_documents: rekap transaksi 6 bulan, daftar pelanggan, kontrak sewa; risk_tolerance: sedang; questions_to_verify: konsistensi omzet dan ketergantungan pelanggan besar",
-    expected_output: "Checklist due diligence awal, pertanyaan wawancara seller, daftar bukti yang perlu diminta, red flag, dan ringkasan risiko awal.",
-    quality_checklist: ["Pertanyaan spesifik ke bisnis yang dinilai", "Ada bukti/dokumen yang perlu diminta", "Ada red flag", "Ada batasan dan verifikasi manual", "Tidak memberi keputusan beli/tidak beli secara absolut"],
-    common_mistakes: ["Langsung percaya klaim omzet", "Tidak mengecek repeat customer", "Mengabaikan kontrak sewa dan izin", "Menggunakan AI sebagai keputusan final"],
-    safe_use_note: "Gunakan sebagai alat bantu riset awal. Untuk keputusan transaksi, konsultasikan dengan akuntan, pajak, hukum, atau advisor bisnis yang relevan.",
-    output_type: "due-diligence-checklist",
-  }));
+export function generateProductStrategy(args: {
+  productName: string;
+  niche: string;
+  audience: string;
+  description: string;
+  promptCount: number;
+  license: string;
+  targetMarket: string;
+}, intent: ProductIntent): ProductStrategy {
+  const strategies: Record<ProductIntentId, ProductStrategy> = {
+    DUE_DILIGENCE_SYSTEM: {
+      category: "Small Business Due Diligence Research System",
+      buyer_transformation: "dari niat membeli bisnis kecil yang masih penuh asumsi menjadi daftar pertanyaan, dokumen, risiko, dan ringkasan temuan yang bisa direview sebelum mengambil keputusan",
+      core_promise: "membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur tanpa menggantikan nasihat hukum, pajak, atau finansial profesional",
+      target_buyer_pain: "calon pembeli usaha sering tidak tahu apa yang harus ditanyakan, dokumen apa yang perlu dicek, risiko apa yang harus dipetakan, dan bagaimana merangkum temuan sebelum membeli bisnis kecil",
+      recommended_format: "buyer due diligence playbook + prompt sequence + checklist risiko + sample interview/output",
+      prompt_categories: ["Acquisition Goal Clarifier", "Seller Interview Builder", "Business Model Snapshot", "Revenue Verification Checklist", "Operational Risk Mapping", "Customer Dependency Analysis", "Supplier & Vendor Review", "Basic Financial Red Flag Scanner", "Legal Document Question List", "Deal Assumption Register", "Risk Summary Report", "Final Due Diligence Review"],
+      premium_differentiation: "menggabungkan pertanyaan riset, checklist risiko, interview seller, validasi dokumen, dan safe-use guard agar buyer tidak menganggap output AI sebagai rekomendasi investasi final",
+      risk_notes: ["bukan nasihat hukum, pajak, investasi, atau finansial", "angka dan dokumen harus diverifikasi manual", "keputusan membeli bisnis harus melibatkan profesional terkait jika risikonya signifikan"],
+      marketplace_positioning: "alat bantu riset awal untuk pemilik UMKM dan calon investor kecil yang ingin mengevaluasi bisnis sebelum akuisisi",
+    },
+    CONTENT_REPURPOSING: {
+      category: "Short-Form Content Repurposing System",
+      buyer_transformation: "dari satu konten panjang menjadi kumpulan hook, script pendek, caption, CTA, dan variasi platform yang siap direview",
+      core_promise: "membantu creator mengubah ide atau long-form content menjadi aset short-form yang lebih terstruktur",
+      target_buyer_pain: "creator sering punya bahan konten tetapi bingung memecahnya menjadi hook, script, caption, dan CTA untuk TikTok, Reels, dan Shorts",
+      recommended_format: "PromptBook + CSV + sample workflow + buyer handbook",
+      prompt_categories: ["Hook Generation", "Long-Form to Short-Form Repurposing", "Short Script Builder", "Caption Variants", "CTA Builder", "Platform Adaptation", "Content Batching", "Audience Angle Finder", "Testing Variants", "Final Content QA"],
+      premium_differentiation: "platform-aware workflow, beginner/advanced examples, dan final QA untuk mengurangi output generik",
+      risk_notes: ["tidak menjamin viral/FYP", "perlu edit manual", "hindari klaim engagement pasti"],
+      marketplace_positioning: "tool produktivitas creator untuk mempercepat repurposing, bukan pengganti strategi konten manusia",
+    },
+    RESEARCH_SYSTEM: {
+      category: "Research & Analysis Framework",
+      buyer_transformation: "dari ide riset yang masih luas menjadi pertanyaan, sumber, instrumen, analisis, insight, dan report outline yang terstruktur",
+      core_promise: "membantu buyer menjalankan riset secara lebih sistematis dengan validasi manual",
+      target_buyer_pain: "UMKM, founder, creator, dan marketer sering mengambil keputusan produk berdasarkan feeling, bukan data yang terstruktur",
+      recommended_format: "research playbook + prompt sequence + sample input/output",
+      prompt_categories: ["Research Question Framing", "Source Mapping", "Data Collection Strategy", "Triangulation", "Interview Guide", "Survey Design", "Thematic Analysis", "Insight Synthesis", "Assumption Register", "Research QA"],
+      premium_differentiation: "memaksa verifikasi sumber, asumsi, dan batasan sehingga hasil tidak sekadar opini AI",
+      risk_notes: ["bukan pengganti riset profesional", "data harus diverifikasi", "tidak boleh mengarang sumber"],
+      marketplace_positioning: "alat bantu riset produk digital untuk UMKM, personal brand, dan creator",
+    },
+    TEXT_TO_IMAGE_SYSTEM: {
+      category: "AI Image Generation Prompt System",
+      buyer_transformation: "dari deskripsi visual kasar menjadi prompt gambar dengan style, lighting, composition, negative prompt, dan QA visual",
+      core_promise: "membantu buyer membuat prompt visual yang lebih konsisten dan siap direview",
+      target_buyer_pain: "output gambar AI sering generik, tidak konsisten, salah komposisi, dan tidak siap dipakai sebagai aset produk",
+      recommended_format: "visual prompt library + style guide + negative prompt + sample outputs",
+      prompt_categories: ["Product Image Prompt", "Style Direction", "Lighting", "Camera Angle", "Background", "Thumbnail", "Negative Prompt", "Variation", "Brand Coherence", "Image QA"],
+      premium_differentiation: "struktur visual lengkap, bukan satu baris prompt generik",
+      risk_notes: ["hak cipta output AI tetap perlu dicek", "hasil bergantung tool", "jangan pakai logo resmi tanpa izin"],
+      marketplace_positioning: "visual prompt system untuk seller produk digital dan creator aset visual",
+    },
+    CONTENT_CREATION: {
+      category: "Content Creation Prompt System",
+      buyer_transformation: "dari ide kosong menjadi draft konten, variasi tone, CTA, dan kalender konten yang lebih terstruktur",
+      core_promise: "membantu buyer membuat konten dengan format, voice, dan output yang konsisten",
+      target_buyer_pain: "buyer kesulitan menjaga konsistensi konten dan brand voice",
+      recommended_format: "content prompt library + usage guide + examples",
+      prompt_categories: ["Ideation", "Outline", "Draft", "Tone", "SEO", "CTA", "Variations", "Quality Check", "Platform Adaptation", "Batch Workflow"],
+      premium_differentiation: "memisahkan ide, draft, optimasi, dan QA agar output tidak terasa generik",
+      risk_notes: ["tidak menjamin engagement", "tetap perlu edit manusia"],
+      marketplace_positioning: "tool produktivitas konten untuk personal brand dan UMKM",
+    },
+    ACADEMIC_WRITING_SYSTEM: {
+      category: "Academic Writing Support System",
+      buyer_transformation: "dari topik akademik menjadi struktur argumen, outline, dan draft yang lebih etis untuk direview",
+      core_promise: "membantu penyusunan struktur tulisan akademik tanpa membuat sumber palsu",
+      target_buyer_pain: "penulis sering bingung menyusun struktur dan menjaga etika sitasi",
+      recommended_format: "academic prompt library + citation safety guide",
+      prompt_categories: ["Topic Framing", "Gap", "Outline", "Literature Review", "Method", "Argument", "Paraphrase", "Citation Ethics", "Limitations", "Final QA"],
+      premium_differentiation: "citation ethics dan no fake DOI guard",
+      risk_notes: ["bukan jasa joki", "sumber wajib diverifikasi"],
+      marketplace_positioning: "alat bantu struktur akademik yang aman dan etis",
+    },
+    BUSINESS_MARKETING_SYSTEM: {
+      category: "Business & Marketing Prompt System",
+      buyer_transformation: "dari offer yang belum rapi menjadi positioning, USP, funnel, CTA, dan sales copy yang siap direview",
+      core_promise: "membantu buyer merapikan komunikasi bisnis tanpa overclaim",
+      target_buyer_pain: "seller sulit menjelaskan value produk secara jelas dan etis",
+      recommended_format: "marketing prompt library + seller messaging guide",
+      prompt_categories: ["Positioning", "USP", "Persona", "Offer", "Sales Page", "CTA", "Objection", "Email", "Campaign", "Ethical QA"],
+      premium_differentiation: "ethical marketing guard dan platform positioning",
+      risk_notes: ["tidak menjamin sales", "hindari income claim"],
+      marketplace_positioning: "tool marketing untuk seller dan UMKM",
+    },
+    GENERAL_PROMPT_PACK: {
+      category: "General Prompt System",
+      buyer_transformation: `dari workflow kosong menjadi sistem prompt ${args.niche} yang lebih terstruktur`,
+      core_promise: `membantu buyer memakai ${args.promptCount} prompt untuk ${args.niche} secara lebih rapi`,
+      target_buyer_pain: `buyer membutuhkan bantuan ${args.niche} yang lebih sistematis`,
+      recommended_format: "PromptBook + CSV + usage guide + examples",
+      prompt_categories: ["Discovery", "Drafting", "Optimization", "Review", "QA"],
+      premium_differentiation: "struktur prompt lengkap dengan contoh dan checklist",
+      risk_notes: ["output perlu validasi manual"],
+      marketplace_positioning: `${args.niche} productivity system untuk ${args.audience}`,
+    },
+  };
+  return strategies[intent.intent] || strategies.GENERAL_PROMPT_PACK;
+}
+
+function currentStrategy(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter) {
+  const intent = detectProductIntent({
+    productName: seller.brand,
+    niche: seller.niche,
+    targetAudience: seller.audience,
+    description: seller.confirmed_product_description,
+    selectedAdapter: adapter,
+    promptCount: seller.prompt_count,
+  });
+  const strategy = generateProductStrategy({
+    productName: seller.brand,
+    niche: seller.niche,
+    audience: seller.audience,
+    description: seller.confirmed_product_description,
+    promptCount: seller.prompt_count,
+    license: seller.license,
+    targetMarket: seller.target_market,
+  }, intent);
+  return { intent, strategy };
+}
+
+
+function buildIntentPromptLibrary(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): PromptSpec[] {
+  const { strategy, intent } = currentStrategy(seller, adapter);
+  const categories = strategy.prompt_categories.length ? strategy.prompt_categories : ["Discovery", "Drafting", "Review"];
+  const safe = intent.intent === "DUE_DILIGENCE_SYSTEM"
+    ? "Gunakan sebagai alat bantu riset awal. Ini bukan nasihat hukum, pajak, investasi, atau finansial. Verifikasi dokumen, angka, dan temuan dengan profesional terkait sebelum mengambil keputusan."
+    : strategy.risk_notes.join(" ") || "Output harus direview manual sebelum digunakan.";
+  const prompts: PromptSpec[] = [];
+  for (let i = 0; i < seller.prompt_count; i += 1) {
+    const category = categories[i % categories.length];
+    const title = category;
+    const variables = intent.intent === "DUE_DILIGENCE_SYSTEM"
+      ? ["target_bisnis", "tujuan_akuisisi", "data_yang_dimiliki", "risiko_yang_dicemaskan", "format_output"]
+      : ["konteks", "target_audience", "tujuan", "batasan", "format_output"];
+    prompts.push({
+      id: `${intent.intent.toLowerCase()}-${String(i + 1).padStart(2, "0")}`,
+      title,
+      category,
+      target_user: seller.audience,
+      use_case: `${category} untuk ${seller.niche}`,
+      purpose: `Membantu buyer menjalankan tahap ${category} secara spesifik untuk ${seller.niche}.`,
+      when_to_use: `Gunakan ketika buyer perlu menyusun ${category.toLowerCase()} sebelum membuat keputusan atau memakai output lanjut.`,
+      beginner_mode: `Isi variabel utama dengan konteks singkat. Fokuskan output pada ${category}, daftar temuan, dan hal yang harus diverifikasi manual.`,
+      advanced_mode: `Tambahkan dokumen/data yang tersedia, asumsi, batasan analisis, format tabel, prioritas risiko, dan pertanyaan lanjutan agar output ${category} lebih tajam.`,
+      full_prompt: `Anda adalah analis riset yang hati-hati. Bantu saya membuat ${category} untuk niche "${seller.niche}".\n\nKonteks produk/bisnis: {{target_bisnis}}\nTujuan buyer: {{tujuan_akuisisi}}\nData yang sudah tersedia: {{data_yang_dimiliki}}\nRisiko yang dicemaskan: {{risiko_yang_dicemaskan}}\nFormat output yang diminta: {{format_output}}\n\nTugas Anda:\n1. Susun output sesuai kategori ${category}.\n2. Pisahkan fakta, asumsi, pertanyaan lanjutan, dan red flag.\n3. Tulis dokumen/data yang perlu diminta kepada pemilik bisnis.\n4. Berikan checklist validasi manual.\n5. Jangan memberi keputusan final membeli/tidak membeli.\n6. Jangan memberi nasihat hukum, pajak, investasi, atau finansial final.\n7. Akhiri dengan catatan verifikasi profesional jika risikonya material.`,
+      input_variables: variables,
+      example_filled_input: intent.intent === "DUE_DILIGENCE_SYSTEM"
+        ? `target_bisnis: kedai kopi kecil dengan 2 cabang; tujuan_akuisisi: membeli usaha aktif; data_yang_dimiliki: omzet bulanan klaim seller dan daftar aset; risiko_yang_dicemaskan: sewa tempat, hutang, pelanggan menurun; format_output: tabel risiko + pertanyaan wawancara`
+        : `konteks: ${seller.niche}; target_audience: ${seller.audience}; tujuan: ${category}; batasan: hindari klaim hasil pasti; format_output: tabel + checklist`,
+      expected_output: `Output ${category} yang berisi ringkasan, daftar pertanyaan, checklist, red flag, asumsi, dan langkah verifikasi manual.`,
+      quality_checklist: [
+        `Output fokus pada ${category}.`,
+        "Ada pemisahan fakta, asumsi, dan pertanyaan lanjutan.",
+        "Ada checklist validasi manual.",
+        "Tidak memberi jaminan hasil atau keputusan final.",
+        "Bahasa sesuai target buyer.",
+      ],
+      common_mistakes: [
+        "Menggunakan data yang belum diverifikasi sebagai fakta.",
+        "Langsung menyimpulkan bisnis aman atau tidak aman.",
+        "Melupakan dokumen pendukung dan wawancara lanjutan.",
+      ],
+      safe_use_note: safe,
+      output_type: intent.intent === "DUE_DILIGENCE_SYSTEM" ? "due-diligence-checklist" : "structured-markdown",
+    });
+  }
+  return prompts;
 }
 
 function isAcademicCaseReportNiche(niche: string): boolean {
@@ -1028,190 +1096,253 @@ function adapterSolutionDetails(seller: ReturnType<typeof sellerMeta>, adapter: 
 }
 
 function productBrief(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
-  const due = isDueDiligenceSystem(seller);
-  if (due) {
-    return [
-      `# Product Brief — ${seller.brand}`,
-      "",
-      `**Nama Produk:** ${seller.brand}`,
-      `**Niche:** ${seller.niche}`,
-      `**Target Audiens:** ${seller.audience}`,
-      `**Jumlah Prompt:** ${seller.prompt_count}`,
-      `**Lisensi:** ${seller.license}`,
-      "",
-      "## Product Promise",
-      "Paket ini membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur sebelum membeli usaha. Buyer dapat menyusun pertanyaan untuk pemilik bisnis, memetakan risiko operasional, mengecek konsistensi pendapatan dasar, menilai ketergantungan pelanggan, dan merangkum red flag sebelum berkonsultasi dengan profesional.",
-      "",
-      "## Masalah Buyer",
-      "Calon pembeli bisnis kecil sering menerima informasi dari penjual yang belum lengkap: omzet belum tervalidasi, catatan transaksi sederhana, pelanggan utama tidak jelas, risiko operasional tersembunyi, dan dokumen penting belum tertata. Tanpa kerangka due diligence, buyer mudah melewatkan pertanyaan penting sebelum transaksi.",
-      "",
-      "## Solusi Produk",
-      seller.confirmed_product_description,
-      "",
-      "## Apa yang Didapat Buyer",
-      mdList(["10 prompt due diligence awal", "PromptLibrary CSV dengan variabel dan contoh input", "Usage guide untuk workflow pemula dan advanced", "Sample input-output untuk skenario bisnis kecil", "Product handbook / playbook", "Buyer output review checklist", "FAQ penggunaan dan batasan aman"]),
-      "",
-      "## Untuk Siapa",
-      mdList([seller.audience, "Buyer yang ingin menyiapkan pertanyaan sebelum bertemu pemilik usaha", "Konsultan bisnis pemula yang butuh kerangka audit awal", "Entrepreneur yang ingin memetakan risiko sebelum meminta bantuan profesional"]),
-      "",
-      "## Tidak Cocok Untuk",
-      mdList(["Pengguna yang mencari nasihat hukum, pajak, investasi, atau finansial final", "Pengguna yang ingin jaminan bisnis aman dibeli", "Pengguna yang tidak mau melakukan verifikasi dokumen dan wawancara manual"]),
-      "",
-      "## Catatan Aman",
-      "Produk ini bukan nasihat hukum, finansial, investasi, pajak, atau valuasi resmi. Output AI harus diverifikasi manual dan sebaiknya dibawa ke profesional terkait sebelum transaksi.",
-    ].join("\n");
-  }
-  return [`# Product Brief — ${seller.brand}`, "", `**Nama Produk:** ${seller.brand}`, `**Niche:** ${seller.niche}`, `**Target Audiens:** ${seller.audience}`, `**Jumlah Prompt:** ${seller.prompt_count}`, `**Lisensi:** ${seller.license}`, "", "## Product Promise", seller.confirmed_product_description, "", "## Masalah Buyer", `Buyer di niche ${seller.niche} sering membutuhkan workflow yang lebih terstruktur, contoh konkret, dan checklist review agar output AI tidak terlalu umum.`, "", "## Apa yang Didapat Buyer", mdList(["PromptBook dengan mode pemula dan advanced", "PromptLibrary CSV", "Usage Guide", "Sample Input/Output", "Product Handbook", "QC Scorecard buyer-facing", "Buyer FAQ"]), "", "## Catatan Aman", "Tidak ada jaminan hasil bisnis, pendapatan, approval marketplace, atau performa tertentu. Semua output perlu direview manual."].join("\n");
+  const { intent, strategy } = currentStrategy(seller, adapter);
+  return [
+    `# Product Brief — ${seller.brand}`,
+    "",
+    `**Nama Produk:** ${seller.brand}`,
+    `**Niche:** ${seller.niche}`,
+    `**Untuk:** ${seller.audience}`,
+    `**Bahasa:** ${seller.language}`,
+    `**Jumlah Prompt:** ${seller.prompt_count}`,
+    `**Lisensi:** ${seller.license}`,
+    "",
+    "## Ringkasan Produk",
+    strategy.core_promise,
+    "",
+    "## Masalah Buyer",
+    strategy.target_buyer_pain,
+    "",
+    "## Solusi Produk",
+    `Paket ini membantu ${seller.audience} menjalankan workflow ${strategy.category} secara lebih rapi melalui PromptBook, PromptLibrary CSV, contoh input-output, handbook, dan checklist review. Produk ini berfungsi sebagai alat bantu kerja, bukan sistem otomatis dan bukan pengganti review profesional.`,
+    "",
+    "## Yang Disediakan Paket Ini",
+    mdList([
+      "PromptBook lengkap dengan beginner mode, advanced mode, input variables, full prompt, expected output, quality checklist, common mistakes, dan manual verification note.",
+      "PromptLibrary CSV untuk mencari dan memakai prompt secara cepat.",
+      "Usage Guide untuk menjalankan workflow dari tahap awal sampai review output.",
+      "Sample Input & Output agar buyer punya contoh pemakaian nyata.",
+      "Product Handbook PDF sebagai playbook penggunaan.",
+      "Buyer Output Review Checklist untuk mengecek output AI sebelum dipakai.",
+    ]),
+    "",
+    "## Untuk Siapa",
+    mdList([seller.audience, "buyer yang ingin workflow prompt terstruktur", "pengguna AI yang bersedia melakukan review dan validasi manual"]),
+    "",
+    "## Tidak Cocok Untuk",
+    mdList([
+      "buyer yang mencari software otomatis",
+      "buyer yang ingin jaminan income, sales, viral, approval marketplace, atau hasil bisnis tertentu",
+      "buyer yang ingin memakai output AI tanpa validasi manual",
+    ]),
+    "",
+    "## Catatan Aman",
+    mdList(strategy.risk_notes),
+    "",
+    intent.mismatch_warning ? `> Catatan sistem: ${intent.mismatch_warning}` : "",
+    `Marketplace target untuk seller: ${marketplaces.map(normalizeMarketplace).join(", ") || "belum dipilih"}. Informasi listing, pricing, thumbnail, cover, dan upload tidak masuk ke Buyer Package; semuanya dipisahkan ke Seller Toolkit.`,
+  ].filter(Boolean).join("\n");
 }
 
-
-function promptBook(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, promptCategories?: string[]): string {
-  const intent = detectProductIntentFromInputs({ niche: seller.niche, description: seller.confirmed_product_description, brand: seller.brand, audience: seller.audience, adapter });
-  const prompts = intent.intent === "DUE_DILIGENCE_SYSTEM" ? dueDiligencePromptSpecs(seller, promptCategories || intent.promptCategories) : buildPromptLibrary(intent.recommendedAdapter || adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
-  const lines = [`# PromptBook — ${seller.brand}`, "", `Intent: ${intent.intent} • Niche: ${seller.niche} • Tone: ${seller.tone}`, `Prompt count: ${prompts.length}`, ""];
-  prompts.slice(0, seller.prompt_count).forEach((prompt, index) => {
-    lines.push(`<!-- PROMPT_ANCHOR:id:${prompt.id} -->`, `## ${index + 1}. ${prompt.title}`, `**Purpose:** ${prompt.purpose}`, `**Best For:** ${prompt.target_user}`, `**When to Use:** ${prompt.when_to_use}`, `**Beginner Mode:** ${prompt.beginner_mode}`, `**Advanced Mode:** ${prompt.advanced_mode}`, "**Full Prompt:**", "```", prompt.full_prompt, "```", `**Input Variables:** ${prompt.input_variables.map((v) => `{{${v}}}`).join(", ")}`, "**Example Filled Input:**", "```", prompt.example_filled_input, "```", `**Expected Output:** ${prompt.expected_output}`, "**Quality Checklist:**");
+function promptBook(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  const { intent, strategy } = currentStrategy(seller, adapter);
+  const prompts = buildIntentPromptLibrary(seller, adapter);
+  const lines: string[] = [
+    `# PromptBook — ${seller.brand}`,
+    "",
+    `**Product Category:** ${strategy.category}`,
+    `**Buyer Transformation:** ${strategy.buyer_transformation}`,
+    "",
+    "## Cara Kerja Prompt System Ini",
+    "PromptBook ini disusun sebagai sistem bertahap. Setiap prompt punya tujuan, kapan digunakan, variabel input, contoh pemula, contoh advanced, full prompt, expected output, checklist kualitas, common mistakes, dan catatan verifikasi manual.",
+    "",
+    "## Prompt Categories",
+    mdList(strategy.prompt_categories.slice(0, seller.prompt_count)),
+    "",
+  ];
+  prompts.forEach((prompt, i) => {
+    lines.push(`## ${i + 1}. ${prompt.title}`);
+    lines.push(`**Purpose:** ${prompt.purpose}`);
+    lines.push(`**When to Use:** ${prompt.when_to_use}`);
+    lines.push(`**Input Variables:** ${prompt.input_variables.map((v) => `{{${v}}}`).join(", ")}`);
+    lines.push("**Beginner Example:**");
+    lines.push(prompt.beginner_mode);
+    lines.push("**Advanced Example:**");
+    lines.push(prompt.advanced_mode);
+    lines.push("**Full Prompt:**");
+    lines.push("```");
+    lines.push(prompt.full_prompt);
+    lines.push("```");
+    lines.push(`**Expected Output:** ${prompt.expected_output}`);
+    lines.push("**Quality Checklist:**");
     prompt.quality_checklist.forEach((item) => lines.push(`- [ ] ${item}`));
     lines.push("**Common Mistakes:**");
     prompt.common_mistakes.forEach((item) => lines.push(`- ${item}`));
-    lines.push(`**Safe Use Note:** ${prompt.safe_use_note}`, "");
+    lines.push(`**Manual Verification Note:** Review fakta, angka, dokumen, sumber, dan klaim sebelum output dipakai.`);
+    lines.push(`**Safe Use Note:** ${prompt.safe_use_note}`);
+    lines.push("");
   });
   return lines.join("\n");
 }
 
-
-function promptLibraryCsv(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, promptCategories?: string[]): string {
-  const intent = detectProductIntentFromInputs({ niche: seller.niche, description: seller.confirmed_product_description, brand: seller.brand, audience: seller.audience, adapter });
-  const prompts = intent.intent === "DUE_DILIGENCE_SYSTEM" ? dueDiligencePromptSpecs(seller, promptCategories || intent.promptCategories) : buildPromptLibrary(intent.recommendedAdapter || adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
-  const escape = (value: string) => `"${String(value || "").replace(/"/g, '""').replace(/\r?\n/g, " ")}"`;
-  return ["id,title,prompt,variables,sample_input,notes", ...prompts.slice(0, seller.prompt_count).map((p, i) => [i + 1, escape(p.title), escape(p.full_prompt), escape(p.input_variables.map((v) => `{{${v}}}`).join("; ")), escape(p.example_filled_input), escape(`${p.purpose} Safe note: ${p.safe_use_note}`)].join(","))].join("\n");
+function promptLibraryCsv(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
+  const prompts = buildIntentPromptLibrary(seller, adapter);
+  const escape = (value: string) => `"${String(value || "").replace(/"/g, '""')}"`;
+  return [
+    "id,title,prompt,variables,sample_input,notes",
+    ...prompts.map((p, i) => {
+      const vars = p.input_variables.map((v) => `{{${v}}}`).join(" | ");
+      const notes = `${p.use_case}. ${p.safe_use_note}`;
+      return [i + 1, escape(p.title), escape(p.full_prompt), escape(vars), escape(p.example_filled_input), escape(notes)].join(",");
+    }),
+  ].join("\n");
 }
 
-
 function usageGuide(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const due = isDueDiligenceSystem(seller);
+  const { strategy } = currentStrategy(seller, adapter);
   return [
     `# Usage Guide — ${seller.brand}`,
     "",
-    `Panduan ini membantu buyer memakai paket **${seller.niche}** secara terstruktur.`,
+    `Panduan ini membantu buyer memakai **${seller.brand}** sebagai ${strategy.category}. Fokusnya adalah ${strategy.buyer_transformation}.`,
     "",
     "## Quick Start",
-    "1. Buka `Product_Handbook.pdf` untuk gambaran lengkap.",
-    "2. Pilih prompt dari `02_PromptBook.md` sesuai tahap kerja.",
-    "3. Isi variabel dengan konteks bisnis, data, dokumen, dan batasan yang nyata.",
-    "4. Jalankan prompt di ChatGPT, Claude, Gemini, atau tool AI teks lain.",
-    "5. Review output menggunakan `QC_Scorecard.md`.",
+    "1. Buka `Product_Handbook.pdf` untuk memahami alur lengkap.",
+    "2. Buka `02_PromptBook.md` dan pilih prompt sesuai tahap kerja.",
+    "3. Cek `03_PromptLibrary.csv` jika ingin mencari prompt secara cepat.",
+    "4. Isi variabel `{{...}}` dengan konteks asli milik buyer.",
+    "5. Jalankan prompt di AI tool pilihan buyer.",
+    "6. Bandingkan dengan `05_Sample_Input_Output.md`.",
+    "7. Review hasil memakai `QC_Scorecard.md` sebelum dipakai.",
     "",
     "## Beginner Workflow",
-    due ? "1. Mulai dari Acquisition Goal Clarifier agar tujuan akuisisi jelas." : "1. Mulai dari prompt pertama yang paling dekat dengan kebutuhan Anda.",
-    due ? "2. Lanjutkan ke Seller Interview Question Builder sebelum bertanya ke pemilik usaha." : "2. Isi variabel wajib dengan konteks singkat.",
-    due ? "3. Gunakan Revenue Verification dan Operational Risk Mapping untuk menandai bukti yang perlu diminta." : "3. Jalankan prompt dan bandingkan hasil dengan sample.",
-    due ? "4. Simpan semua red flag di Deal Assumption Register." : "4. Revisi input jika hasil terlalu umum.",
-    due ? "5. Buat Risk Summary Report sebelum berdiskusi dengan profesional." : "5. Gunakan QC Scorecard sebelum output final.",
+    mdList([
+      "Mulai dari prompt pertama dan ikuti urutan kategori.",
+      "Gunakan contoh input sederhana sebelum memakai data asli.",
+      "Minta AI menjawab dalam format bullet atau tabel jika output terlalu panjang.",
+      "Simpan output pertama sebagai draft, bukan hasil final.",
+    ]),
     "",
     "## Advanced Workflow",
-    "1. Siapkan dokumen awal: ringkasan bisnis, rekap transaksi, daftar pelanggan, biaya operasional, kontrak sewa, izin, dan pertanyaan terbuka.",
-    "2. Jalankan beberapa prompt sebagai workflow berurutan, bukan satu prompt terpisah.",
-    "3. Tandai pernyataan penjual yang belum punya bukti.",
-    "4. Pisahkan fakta, asumsi, red flag, dan hal yang perlu dikonsultasikan.",
-    "5. Jangan gunakan output AI sebagai keputusan final transaksi.",
+    mdList([
+      "Gabungkan 2-3 prompt yang saling terkait untuk membangun workflow lengkap.",
+      "Tambahkan batasan tone, target audience, format output, dan kriteria review.",
+      "Minta variasi output untuk membandingkan pendekatan berbeda.",
+      "Gunakan checklist untuk menyaring output yang terlalu generik.",
+    ]),
     "",
     "## Cara Mengisi Variabel",
-    "Variabel ditandai dengan `{{nama_variabel}}`. Isi dengan data spesifik, bukan kalimat umum.",
+    "Ganti setiap `{{variabel}}` dengan informasi nyata. Hindari input seperti 'buat yang bagus'. Pakai input spesifik: target, konteks, batasan, contoh, format, dan tujuan akhir.",
     "",
-    "## Batasan Aman",
-    "Produk ini bukan nasihat hukum, finansial, pajak, investasi, valuasi, atau audit resmi. Gunakan sebagai alat bantu riset awal dan verifikasi semua output secara manual.",
+    "## Cara Mengevaluasi Output AI",
+    mdList([
+      "Apakah output menjawab tujuan prompt?",
+      "Apakah output spesifik untuk niche dan audiens?",
+      "Apakah ada klaim yang perlu diverifikasi?",
+      "Apakah formatnya siap diedit atau dicopy?",
+      "Apakah perlu menjalankan prompt lanjutan untuk memperbaiki output?",
+    ]),
+    "",
+    "## Mistakes to Avoid",
+    mdList([
+      "Memakai output mentah tanpa review.",
+      "Menghapus safe-use note dari hasil akhir.",
+      "Mengisi variabel terlalu umum.",
+      "Meminta AI membuat data, sumber, angka, atau bukti yang tidak tersedia.",
+      "Menggunakan klaim seperti dijamin laku, pasti viral, guaranteed income, atau marketplace approved.",
+    ]),
   ].join("\n");
 }
-
 
 function sampleInputOutput(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  if (isDueDiligenceSystem(seller)) {
-    return [`# Sample Input & Output — ${seller.brand}`, "", "Semua contoh bersifat synthetic dan harus diverifikasi manual. Produk ini bukan nasihat hukum, finansial, pajak, investasi, atau valuasi resmi.", "", "## Sample 1: Seller Interview Question Builder", "**Sample User Input:**", "```", "business_context: laundry kiloan dengan 2 cabang kecil; seller_claims: omzet stabil Rp60 juta/bulan; available_documents: rekap transaksi 6 bulan dan kontrak sewa; risk_tolerance: sedang; questions_to_verify: repeat customer, biaya operasional, dan alasan dijual", "```", "**Example AI Output:**", "```", "Pertanyaan utama: 1) Dari omzet Rp60 juta/bulan, berapa persen berasal dari 10 pelanggan terbesar? 2) Apakah ada bulan dengan penurunan transaksi signifikan? 3) Berapa biaya tetap per bulan termasuk sewa, gaji, listrik, deterjen, maintenance mesin? 4) Apakah mesin milik sendiri atau sewa? 5) Mengapa bisnis dijual sekarang?\nBukti yang diminta: rekap transaksi bulanan, daftar pelanggan anonim, tagihan biaya utama, kontrak sewa, daftar aset.\nRed flag: omzet hanya dari beberapa pelanggan, kontrak sewa hampir habis, mesin sering rusak, alasan jual tidak konsisten.", "```", "**Review Note:** Jangan langsung percaya angka omzet. Minta bukti transaksi dan cek konsistensi biaya.", "", "## Sample 2: Revenue Verification Checklist", "**Sample User Input:**", "```", "business_context: warung kopi kecil; seller_claims: profit bersih Rp18 juta/bulan; available_documents: catatan kas manual 4 bulan; risk_tolerance: rendah; questions_to_verify: margin, biaya bahan baku, dan repeat customer", "```", "**Example AI Output:**", "```", "Checklist verifikasi: 1) Pisahkan omzet, HPP, gaji, sewa, listrik, marketplace delivery, dan owner withdrawal. 2) Cocokkan catatan kas dengan mutasi rekening atau bukti transaksi. 3) Hitung margin per menu utama. 4) Cek apakah profit sudah memperhitungkan gaji owner. 5) Tandai gap data: catatan hanya 4 bulan, belum mencakup musim sepi/ramai.", "```", "**Review Note:** Output ini bukan audit keuangan. Gunakan untuk menyiapkan diskusi dengan akuntan atau advisor.", "", "## Sample 3: Risk Summary Report", "**Sample User Input:**", "```", "business_context: toko frozen food rumahan; seller_claims: 70% penjualan dari reseller; available_documents: daftar reseller dan omzet 6 bulan; risk_tolerance: sedang; questions_to_verify: customer dependency dan supplier risk", "```", "**Example AI Output:**", "```", "Risk Summary:\nOperational Risk: sedang, karena proses masih bergantung pada owner lama.\nCustomer Dependency: tinggi, karena 70% penjualan berasal dari reseller dan belum jelas apakah relasi berpindah ke buyer baru.\nSupplier Risk: sedang, perlu cek apakah supplier utama punya kontrak atau hanya hubungan informal.\nNext Step: minta data reseller anonim, histori pembelian, kontrak/komitmen supplier, dan rencana transisi 30-90 hari.", "```", "**Review Note:** Gunakan ringkasan ini sebagai bahan tanya lanjut, bukan keputusan final membeli bisnis."].join("\n");
+  const { intent, strategy } = currentStrategy(seller, adapter);
+  if (intent.intent === "DUE_DILIGENCE_SYSTEM") {
+    return [
+      `# Sample Input & Output — ${seller.brand}`,
+      "",
+      "Contoh ini synthetic dan hanya untuk latihan struktur. Buyer wajib memverifikasi semua angka, dokumen, dan temuan dengan sumber nyata.",
+      "",
+      "## Sample 1: Seller Interview Question Builder",
+      "**Sample User Input:**",
+      "```",
+      "target_bisnis: laundry kiloan aktif 3 tahun; tujuan_akuisisi: membeli usaha berjalan; data_yang_dimiliki: omzet klaim 35 juta/bulan, 5 mesin, kontrak sewa sisa 1 tahun; risiko_yang_dicemaskan: pelanggan menurun dan mesin sering rusak; format_output: daftar pertanyaan wawancara + red flag",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Daftar Pertanyaan Wawancara:\n1. Berapa omzet bulanan 12 bulan terakhir dan bukti transaksinya apa?\n2. Berapa persentase pelanggan repeat dan bagaimana cara mencatatnya?\n3. Apakah ada hutang usaha, cicilan mesin, atau kewajiban supplier?\n4. Bagaimana status sewa tempat dan opsi perpanjangannya?\n5. Mesin mana yang paling sering rusak dan kapan terakhir servis?\n\nRed Flag Awal:\n- Seller tidak bisa menunjukkan bukti transaksi.\n- Kontrak sewa hampir habis tanpa kepastian perpanjangan.\n- Tidak ada catatan pelanggan atau komplain.\n\nVerifikasi Manual:\nMinta laporan transaksi, bukti pembayaran sewa, catatan servis mesin, dan wawancara minimal 2 pelanggan tetap.",
+      "```",
+      "**Review Note:** Ini bukan keputusan membeli. Gunakan sebagai daftar tanya awal dan validasi dengan dokumen nyata.",
+      "",
+      "## Sample 2: Revenue Verification Checklist",
+      "**Sample User Input:**",
+      "```",
+      "target_bisnis: kedai kopi kecil; data_yang_dimiliki: klaim omzet, daftar menu, biaya sewa, gaji barista; risiko_yang_dicemaskan: omzet hanya naik saat event; format_output: checklist validasi omzet",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Checklist Validasi Omzet:\n- Cocokkan klaim omzet dengan mutasi rekening, POS, nota, atau buku kas.\n- Pisahkan penjualan normal, event, promo, dan pesanan besar satu kali.\n- Hitung rata-rata harian dan variasi weekday/weekend.\n- Cek gross margin per menu utama.\n- Tanyakan periode penurunan paling besar dan penyebabnya.\n\nPertanyaan Lanjutan:\n1. Apakah owner mengambil kas tanpa pencatatan?\n2. Apakah ada pembayaran supplier tertunda?\n3. Apakah pelanggan utama berasal dari lokasi, komunitas, atau promo berbayar?\n\nCatatan Aman: Angka harus diverifikasi. Jangan memakai klaim omzet sebagai fakta tanpa dokumen pendukung.",
+      "```",
+      "**Review Note:** Gunakan untuk mengarahkan audit ringan. Untuk transaksi material, libatkan akuntan/konsultan.",
+      "",
+      "## Sample 3: Risk Summary Report",
+      "**Sample User Input:**",
+      "```",
+      "target_bisnis: toko frozen food; data_yang_dimiliki: supplier list, omzet 6 bulan, stok, kontrak ruko; risiko_yang_dicemaskan: ketergantungan supplier dan stok expired; format_output: ringkasan risiko prioritas",
+      "```",
+      "**Example AI Output:**",
+      "```",
+      "Ringkasan Risiko Prioritas:\nHigh: Ketergantungan pada 1 supplier utama tanpa kontrak tertulis.\nMedium: Sistem stok belum mencatat expiry date per batch.\nMedium: Omzet 6 bulan belum dipisah antara retail dan reseller.\nLow: Branding toko belum konsisten, tetapi bukan risiko akuisisi utama.\n\nDokumen yang Perlu Diminta:\n- Purchase order/invoice supplier 6-12 bulan.\n- Catatan stok dan barang expired.\n- Daftar reseller aktif dan kontribusi omzet.\n- Kontrak ruko dan biaya operasional tetap.\n\nKeputusan yang Belum Bisa Diambil:\nBelum cukup data untuk menyimpulkan kelayakan pembelian. Perlu validasi dokumen dan proyeksi arus kas konservatif.",
+      "```",
+      "**Review Note:** Hindari kesimpulan final. Output ini hanya ringkasan awal untuk diskusi dan validasi lanjut.",
+    ].join("\n");
   }
-  return [`# Sample Input & Output — ${seller.brand}`, "", "## Sample 1: Basic Use", "**Sample User Input:**", "```", `niche: ${seller.niche}; audience: ${seller.audience}; goal: membuat output terstruktur`, "```", "**Example AI Output:**", "```", "Output disusun dalam format tujuan, input, langkah kerja, hasil yang diharapkan, dan checklist review.", "```", "", "## Sample 2: Advanced Use", "**Sample User Input:**", "```", "context: data tersedia terbatas; risk: output terlalu umum; format: checklist", "```", "**Example AI Output:**", "```", "Checklist dibuat dengan asumsi, data yang perlu ditambahkan, batasan, dan langkah verifikasi manual.", "```", "", "## Sample 3: QA Review", "**Sample User Input:**", "```", "output_to_review: draft AI; criteria: clarity, specificity, safety", "```", "**Example AI Output:**", "```", "Review: output cukup jelas, tetapi perlu contoh lebih spesifik dan catatan batasan. Tidak ada klaim hasil pasti.", "```"].join("\n");
-}
 
-
-function qualityChecklist(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const coding = adapter === "CODING_AUTOMATION" ? [
-    "## Checklist PRD", "- [ ] Goal dan non-goal jelas", "- [ ] Minimal 5 user story", "- [ ] Acceptance criteria terukur", "- [ ] Risiko dan asumsi tercantum", "",
-    "## Checklist Database/Auth/API", "- [ ] Schema punya PK/FK dan index", "- [ ] Role dan permission matrix jelas", "- [ ] Endpoint punya input/output dan auth required", "- [ ] Validasi server-side tertulis", "",
-    "## Checklist Automation & Ops", "- [ ] Trigger workflow jelas", "- [ ] Retry/dead-letter/logging tersedia", "- [ ] Testing pre-launch, launch, post-launch lengkap", "- [ ] Rollback, backup, monitoring tercantum", "",
-  ] : [];
-  return [
-    `# Quality Checklist — ${seller.brand}`,
-    "",
-    ...coding,
-    "## Checklist Prompt Pack",
-    "- [ ] Semua prompt punya purpose, when to use, full prompt, variables, expected output, dan safe use note.",
-    "- [ ] Tidak ada prompt body duplikat.",
-    "- [ ] CSV jumlah barisnya sesuai jumlah prompt.",
-    "- [ ] Sample Input/Output minimal 3 contoh.",
-    "",
-    "## Checklist Klaim Aman",
-    ...(adapter === "EVIDENCE_HANDBOOK" ? ["- [ ] Evidence Table berisi claim, source status, evidence level, limitation, dan verification status.", "- [ ] Tidak ada DOI, studi, penulis, tahun, dosis, angka, atau guideline yang dikarang.", "- [ ] Klaim kesehatan/keuangan/hukum diberi safety disclaimer dan source verification requirement.", "- [ ] Semua bagian yang belum punya sumber diberi label [SOURCE NEEDED] atau [VERIFY ORIGINAL].", ""] : []),
-    "- [ ] Tidak menjanjikan income.",
-    "- [ ] Tidak menjamin produk laku.",
-    "- [ ] Tidak menjamin angka sales.",
-    "- [ ] Tidak mengklaim marketplace-approved atau partner resmi.",
-    "- [ ] Semua listing menyebut upload manual dan seller review required.",
-  ].join("\n");
-}
-
-function licenseDisclaimer(seller: ReturnType<typeof sellerMeta>): string {
-  return [
-    `# License & Disclaimer — ${seller.brand}`,
-    "",
-    `**License Type:** ${seller.license}`,
-    "",
-    "## Allowed Use",
-    "- Buyer boleh memakai prompt untuk proyek personal, internal, atau client sesuai lisensi yang dibeli.",
-    "- Buyer boleh mengubah prompt agar sesuai kebutuhan proyek.",
-    "- Buyer boleh memakai output AI yang dihasilkan setelah review manual.",
-    "",
-    "## Not Allowed",
-    "- Buyer tidak boleh menjual ulang prompt pack ini secara utuh/as-is sebagai produk baru.",
-    "- Buyer tidak boleh mengklaim sebagai partner resmi marketplace atau AI provider.",
-    "- Buyer tidak boleh memakai materi ini untuk membuat klaim palsu, testimoni palsu, atau validasi pasar palsu.",
-    "",
-    "## Disclaimer",
-    "Prompt ini adalah template dan heuristic. Kualitas output bergantung pada model AI, kualitas input, konteks, dan review manual. Tidak ada jaminan hasil, income, sales, approval marketplace, atau performa bisnis tertentu.",
-    "",
-    "## Marketplace Responsibility",
-    "Seller dan buyer wajib memverifikasi kebijakan marketplace, AI provider ToS, dan aturan produk digital sebelum upload/publish.",
-  ].join("\n");
-}
-
-function manualUploadGuide(marketplaces: string[]): string {
-  const targets = marketplaces.length ? marketplaces : ["marketplace pilihan"];
-  return [
-    "# Manual Upload Guide",
-    "",
-    "## Packing File",
-    "1. Pastikan semua file di 19_Marketplace_Bundle_Index.md atau 13_Ready_to_Upload_Checklist.md sudah lengkap.",
-    "2. Kompres file buyer menjadi ZIP.",
-    "3. Siapkan cover/thumbnail sesuai 11_Thumbnail_Brief.md.",
-    "4. Simpan backup file sumber sebelum upload.",
-    "",
-    "## Upload Manual ke Marketplace",
-    ...targets.map((mp) => `- **${mp}**: Login ke dashboard seller → buat produk digital/listing → upload ZIP atau link delivery → tempel draft listing → review kebijakan → publish manual.`),
-    "",
-    "## Policy Verification Reminder",
-    "Verifikasi aturan produk digital, delivery file, refund, deskripsi, kategori, dan tag di marketplace tujuan sebelum publish.",
-    "",
-    "## No Automatic Publishing",
-    "Sistem ini tidak memakai API marketplace dan tidak melakukan auto-publish. Semua upload dilakukan manual oleh seller.",
-  ].join("\n");
+  const prompts = buildIntentPromptLibrary(seller, adapter).slice(0, 3);
+  const lines = [`# Sample Input & Output — ${seller.brand}`, "", "Contoh berikut menunjukkan cara memakai prompt. Semua hasil tetap perlu direview manual.", ""];
+  prompts.forEach((p, i) => {
+    lines.push(`## Sample ${i + 1}: ${p.title}`);
+    lines.push("**Sample User Input:**");
+    lines.push("```");
+    lines.push(p.example_filled_input);
+    lines.push("```");
+    lines.push("**Example AI Output:**");
+    lines.push("```");
+    lines.push(`${p.expected_output}\n\nChecklist awal:\n- Output sesuai konteks.\n- Ada bagian yang perlu diverifikasi.\n- Tidak ada klaim hasil pasti.`);
+    lines.push("```");
+    lines.push(`**Review Note:** ${p.safe_use_note}`);
+    lines.push("");
+  });
+  return lines.join("\n");
 }
 
 function buyerFAQ(seller: ReturnType<typeof sellerMeta>): string {
-  if (isDueDiligenceSystem(seller)) {
-    return [`# Buyer FAQ — ${seller.brand}`, "", "## 1. Apa produk ini?", "Paket prompt untuk membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur sebelum membeli usaha.", "", "## 2. Apakah ini nasihat hukum atau finansial?", "Tidak. Produk ini bukan nasihat hukum, finansial, pajak, investasi, valuasi, atau audit resmi. Gunakan sebagai alat bantu riset awal.", "", "## 3. Data apa yang perlu saya siapkan?", "Siapkan konteks bisnis, klaim penjual, dokumen yang tersedia, rekap transaksi, daftar aset, biaya operasional, kontrak, izin, dan pertanyaan yang belum terjawab.", "", "## 4. Apakah produk ini bisa menentukan bisnis layak dibeli?", "Tidak. Produk ini membantu menyusun pertanyaan, checklist, dan ringkasan risiko. Keputusan transaksi tetap memerlukan verifikasi manual dan saran profesional.", "", "## 5. Cocok untuk pemula?", "Ya. Setiap prompt memiliki beginner mode, contoh input, expected output, common mistakes, dan safe use note.", "", "## 6. Tool AI apa yang bisa dipakai?", "ChatGPT, Claude, Gemini, atau tool AI teks lain.", "", "## 7. Boleh dipakai untuk client?", `Boleh sesuai lisensi ${seller.license}, tetapi output harus direview dan disesuaikan dengan konteks client.`, "", "## 8. Apakah boleh dijual ulang?", "Tidak boleh menjual ulang file asli/as-is sebagai paket yang sama. Gunakan sesuai lisensi produk yang dibeli.", "", "## 9. Bagaimana jika output AI terlalu umum?", "Tambahkan data lebih spesifik: jenis bisnis, lokasi, klaim penjual, dokumen tersedia, risiko yang dikhawatirkan, dan format ringkasan yang diinginkan.", "", "## 10. Apa batasan paling penting?", "AI dapat membantu menyusun kerangka, tetapi tidak dapat menggantikan audit, legal review, tax review, financial due diligence, atau keputusan bisnis profesional."].join("\n");
-  }
-  return [`# Buyer FAQ — ${seller.brand}`, "", "## 1. Apa produk ini?", `Paket prompt sistem untuk ${seller.niche}.`, "", "## 2. Apa yang saya dapat?", "PromptBook, PromptLibrary CSV, Usage Guide, Sample Input/Output, Product Handbook, QC Scorecard, dan FAQ.", "", "## 3. Tool AI apa yang bisa dipakai?", "ChatGPT, Claude, Gemini, atau tool AI teks lain.", "", "## 4. Apakah ada jaminan hasil?", "Tidak. Output tetap perlu review manual."].join("\n");
+  const adapter = resolveAdapter("CUSTOM", seller.niche);
+  const { intent } = currentStrategy(seller, adapter);
+  const diligence = intent.intent === "DUE_DILIGENCE_SYSTEM";
+  const rows = diligence ? [
+    ["Apa produk ini?", "Ini adalah paket prompt dan panduan untuk membantu calon pembeli bisnis kecil melakukan due diligence awal secara lebih terstruktur."],
+    ["Apakah ini nasihat hukum atau finansial?", "Tidak. Produk ini bukan nasihat hukum, pajak, investasi, atau finansial. Gunakan sebagai alat bantu riset awal dan tetap konsultasikan ke profesional bila risikonya material."],
+    ["Data apa yang perlu saya siapkan?", "Siapkan informasi bisnis target, tujuan akuisisi, dokumen yang sudah ada, pertanyaan yang ingin dijawab, serta risiko yang paling dikhawatirkan."],
+    ["Apakah produk ini bisa menentukan bisnis layak dibeli?", "Tidak. Produk ini membantu menyusun pertanyaan, checklist, dan ringkasan temuan. Keputusan akhir tetap harus berdasarkan data nyata dan penilaian profesional."],
+    ["Apakah cocok untuk pemula?", "Ya, karena setiap prompt punya beginner mode, advanced mode, contoh input, expected output, dan checklist review."],
+    ["AI tool apa yang bisa dipakai?", "Bisa digunakan di ChatGPT, Claude, Gemini, atau AI chat lain yang mendukung instruksi panjang."],
+    ["Bolehkah dipakai untuk client work?", `Ikuti batas lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya kecuali lisensi tertulis mengizinkan.`],
+    ["Bagaimana cara mengecek output AI?", "Gunakan QC_Scorecard.md untuk memeriksa fakta, asumsi, red flag, dokumen pendukung, dan klaim yang perlu diverifikasi."],
+    ["Apakah ada jaminan hasil?", "Tidak ada jaminan income, profit, akuisisi berhasil, atau keputusan bisnis bebas risiko."],
+    ["Apa yang harus dilakukan jika output terasa generik?", "Tambahkan data spesifik: jenis usaha, lokasi, omzet klaim, dokumen yang tersedia, risiko utama, dan format output yang diinginkan."],
+  ] : [
+    ["Apa produk ini?", `Ini adalah paket prompt untuk membantu buyer menjalankan workflow ${seller.niche} secara lebih terstruktur.`],
+    ["Apakah cocok untuk pemula?", "Ya. PromptBook menyediakan beginner mode, contoh input, expected output, dan checklist."],
+    ["File apa yang saya dapat?", "Product Brief, PromptBook, PromptLibrary CSV, Usage Guide, Sample Input & Output, FAQ, Product Handbook PDF, dan Buyer Output Review Checklist."],
+    ["AI tool apa yang bisa dipakai?", "ChatGPT, Claude, Gemini, atau AI chat lain yang mendukung prompt panjang."],
+    ["Bolehkah dipakai untuk client work?", `Ikuti batas lisensi: ${seller.license}.`],
+    ["Apakah ada jaminan hasil?", "Tidak. Output bergantung pada input, tool AI, konteks, dan review manual."],
+    ["Bolehkah prompt dimodifikasi?", "Boleh untuk kebutuhan pribadi atau client sesuai lisensi. Jangan jual ulang file asli tanpa izin."],
+    ["Bagaimana mengecek kualitas output?", "Gunakan QC_Scorecard.md dan sample input-output sebagai pembanding."],
+    ["Apa yang dilakukan jika output generik?", "Perjelas konteks, target audience, batasan, format output, dan contoh referensi."],
+    ["Apakah ini software otomatis?", "Tidak. Ini produk digital berupa prompt, panduan, contoh, dan checklist."],
+  ];
+  return [`# Buyer FAQ — ${seller.brand}`, "", ...rows.flatMap(([q, a]) => [`## ${q}`, a, ""])].join("\n");
 }
-
 
 function pricingRecommendation(seller: ReturnType<typeof sellerMeta>): string {
   const base = Math.max(49000, Math.round(seller.prompt_count * 7500));
@@ -1377,234 +1508,77 @@ function marketingVideoCtaPrompt(seller: ReturnType<typeof sellerMeta>, adapter:
   ].join("\n");
 }
 
-function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, _marketplaces: string[]): string {
-  const lang = resolveOutputLang(seller.language, seller.target_market);
-  const intent = detectProductIntentFromInputs({
-    niche: seller.niche,
-    description: seller.confirmed_product_description,
-    brand: seller.brand,
-    audience: seller.audience,
-    adapter,
-  });
-  const prompts =
-    intent.intent === "DUE_DILIGENCE_SYSTEM"
-      ? dueDiligencePromptSpecs(seller, intent.promptCategories)
-      : buildPromptLibrary(intent.recommendedAdapter || adapter, seller.niche, seller.prompt_count, seller.audience, seller.tone);
-  const used = prompts.slice(0, seller.prompt_count);
-
-  const promptSummarySection: string[] = [];
-  promptSummarySection.push(L(lang, "# Ringkasan Semua Prompt", "# Prompt Summary — All Prompts"));
-  used.forEach((p, i) => {
-    promptSummarySection.push(
-      `## ${i + 1}. ${p.title}`,
-      L(lang, `**Tujuan:** ${p.purpose}`, `**Purpose:** ${p.purpose}`),
-      L(lang, `**Kapan Dipakai:** ${p.when_to_use}`, `**When to Use:** ${p.when_to_use}`),
-      L(lang, `**Output yang Diharapkan:** ${p.expected_output}`, `**Expected Output:** ${p.expected_output}`),
-      L(lang, `**Variabel:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`, `**Variables:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`),
-      ""
-    );
-  });
-
-  if (intent.intent === "DUE_DILIGENCE_SYSTEM") {
-    return [
-      `# ${seller.brand}`,
-      "",
-      L(lang, "# Pendahuluan", "# Introduction"),
-      L(
-        lang,
-        "Playbook ini membantu calon pembeli bisnis kecil melakukan due diligence awal secara terstruktur sebelum mengambil keputusan akuisisi. Semua hasil tetap perlu diverifikasi.",
-        "This playbook helps small-business buyers run structured preliminary due diligence before an acquisition decision. All results still require verification."
-      ),
-      "",
-      L(lang, "# Mengapa Due Diligence Penting", "# Why Due Diligence Matters"),
-      L(
-        lang,
-        "Akuisisi bisnis kecil sering bergantung pada catatan informal dan penjelasan pemilik. Buyer butuh cara memisahkan klaim, bukti, asumsi, risiko, dan langkah berikutnya.",
-        "Small-business acquisitions often rely on informal records and owner explanations. A buyer needs a way to separate claims, evidence, assumptions, risks, and next steps."
-      ),
-      "",
-      L(lang, "# Untuk Siapa", "# Who This Helps"),
-      mdList([seller.audience, L(lang, "Pembeli bisnis pertama kali", "First-time acquisition buyers"), L(lang, "Konsultan yang menyusun cek awal", "Consultants structuring preliminary checks")]),
-      "",
-      L(lang, "# Cara Memakai Sistem Ini", "# How to Use This System"),
-      mdList([
-        L(lang, "Mulai dari Acquisition Goal Clarifier", "Start with the Acquisition Goal Clarifier"),
-        L(lang, "Pakai Seller Interview Question Builder", "Use the Seller Interview Question Builder"),
-        L(lang, "Minta bukti untuk tiap klaim", "Request evidence for every claim"),
-        L(lang, "Tandai setiap klaim yang belum terbukti", "Flag every unverified claim"),
-      ]),
-      "",
-      L(lang, "# Beginner Workflow", "# Beginner Workflow"),
-      mdList([
-        L(lang, "Perjelas tujuan akuisisi", "Clarify acquisition goals"),
-        L(lang, "Wawancara pemilik usaha", "Interview the owner"),
-        L(lang, "Verifikasi pendapatan dasar", "Verify basic revenue"),
-        L(lang, "Rangkum risiko awal dengan checklist review", "Summarize early risk with the review checklist"),
-      ]),
-      "",
-      L(lang, "# Advanced Workflow", "# Advanced Workflow"),
-      mdList([
-        L(lang, "Jalankan semua prompt sebagai workflow berurutan", "Run all prompts as a sequential workflow"),
-        L(lang, "Pisahkan fakta, klaim, asumsi, dan red flag", "Separate facts, claims, assumptions, and red flags"),
-        L(lang, "Bandingkan klaim dengan dokumen", "Compare claims with documents"),
-        L(lang, "Buat daftar risiko transisi 30-90 hari", "Build a 30-90 day transition-risk list"),
-      ]),
-      "",
-      L(lang, "# Inti Workflow Due Diligence", "# Core Due Diligence Workflow"),
-      mdList(used.map((p) => p.title)),
-      "",
-      ...promptSummarySection,
-      L(lang, "# Contoh 1: Membeli Warung Kopi Kecil", "# Example 1: Buying a Small Coffee Shop"),
-      L(
-        lang,
-        "Penjual mengklaim profit stabil, tetapi dokumen hanya catatan manual 4 bulan. Minta bukti transaksi, rincian biaya, status sewa, ketergantungan supplier, penyesuaian gaji owner, dan batasan musiman.",
-        "Seller claims stable profit, but documents are only 4 months of manual notes. Request transaction evidence, cost breakdown, lease status, supplier dependency, owner-salary adjustment, and seasonality limits."
-      ),
-      "",
-      L(lang, "# Contoh 2: Membeli Bisnis Laundry", "# Example 2: Buying a Laundry Business"),
-      L(
-        lang,
-        "Dua cabang, klaim pelanggan tetap, peralatan termasuk. Cek konsentrasi pelanggan, kondisi alat, biaya perawatan, ketentuan sewa, ketergantungan karyawan, dan rencana transisi.",
-        "Two branches, claimed recurring customers, equipment included. Check customer concentration, equipment condition, maintenance cost, lease terms, employee dependency, and transition plan."
-      ),
-      "",
-      L(lang, "# Checklist Wawancara Penjual", "# Seller Interview Checklist"),
-      mdList([
-        L(lang, "Berapa persen omzet dari 10 pelanggan terbesar?", "What percentage of revenue comes from the top 10 customers?"),
-        L(lang, "Adakah bulan dengan penurunan signifikan?", "Any months with significant decline?"),
-        L(lang, "Berapa total biaya tetap bulanan?", "What are total monthly fixed costs?"),
-        L(lang, "Mengapa bisnis dijual sekarang?", "Why is the business being sold now?"),
-      ]),
-      "",
-      L(lang, "# Daftar Permintaan Dokumen", "# Document Request List"),
-      mdList([
-        L(lang, "Rekap transaksi bulanan", "Monthly transaction records"),
-        L(lang, "Daftar pelanggan anonim", "Anonymized customer list"),
-        L(lang, "Tagihan biaya utama", "Major cost invoices"),
-        L(lang, "Kontrak sewa dan izin", "Lease contract and permits"),
-        L(lang, "Daftar aset", "Asset list"),
-      ]),
-      "",
-      L(lang, "# Tabel Red Flag", "# Red Flag Table"),
-      mdList([
-        L(lang, "Klaim omzet tidak bisa dikaitkan dengan bukti", "Revenue claim cannot be tied to evidence"),
-        L(lang, "Profit tidak memperhitungkan gaji owner", "Profit excludes owner salary"),
-        L(lang, "Satu atau dua pelanggan mendominasi omzet", "One or two customers dominate revenue"),
-        L(lang, "Status sewa atau izin tidak jelas", "Lease or permit status is unclear"),
-        L(lang, "Alasan menjual tidak konsisten", "Reason for selling is inconsistent"),
-      ]),
-      "",
-      L(lang, "# Template Ringkasan Risiko", "# Risk Summary Template"),
-      mdList([
-        L(lang, "Operational Risk: rendah/sedang/tinggi + alasan", "Operational Risk: low/medium/high + reason"),
-        L(lang, "Customer Dependency: rendah/sedang/tinggi + alasan", "Customer Dependency: low/medium/high + reason"),
-        L(lang, "Supplier Risk: rendah/sedang/tinggi + alasan", "Supplier Risk: low/medium/high + reason"),
-        L(lang, "Next Step + dokumen yang diminta", "Next Step + requested documents"),
-      ]),
-      "",
-      L(lang, "# Panduan Verifikasi Manual", "# Manual Verification Guide"),
-      L(
-        lang,
-        "Jangan menganggap output AI sebagai fakta. Minta dokumen, bandingkan klaim, wawancara penjual, amati operasi, dan konsultasikan profesional sebelum menandatangani atau mentransfer dana.",
-        "Never treat AI output as fact. Request documents, compare claims, interview the seller, observe operations, and consult professionals before signing or transferring funds."
-      ),
-      "",
-      L(lang, "# Kapan Harus Konsultasi Profesional", "# When to Consult Professionals"),
-      L(
-        lang,
-        "Konsultasikan akuntan, pajak, hukum, atau advisor bisnis sebelum keputusan transaksi final.",
-        "Consult an accountant, tax, legal, or business advisor before any final transaction decision."
-      ),
-      "",
-      "# FAQ",
-      L(
-        lang,
-        "Ini alat bantu riset dan pendukung keputusan. Bukan nasihat hukum, finansial, pajak, valuasi, investasi, atau audit.",
-        "This is a research and decision-support toolkit. It is not legal, financial, tax, valuation, investment, or audit advice."
-      ),
-      "",
-      L(lang, "# Lisensi dan Penggunaan Aman", "# License and Safe Use"),
-      L(
-        lang,
-        `Lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya. Output harus direview. Hasil bervariasi sesuai kualitas input dan bukti.`,
-        `License: ${seller.license}. Do not resell the original files as-is. Outputs must be reviewed. Results vary based on input quality and evidence.`
-      ),
-      "",
-      L(lang, "# Catatan Akhir", "# Final Notes"),
-      L(
-        lang,
-        "Tujuannya bukan membuat keputusan untuk buyer, tetapi membuat pertanyaan, permintaan bukti, dan ringkasan risiko buyer lebih terstruktur.",
-        "The goal is not to decide for the buyer, but to make the buyer's questions, evidence requests, and risk summary more structured."
-      ),
-    ].join("
-");
-  }
-
+function completePdfProductDraft(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
+  const { intent, strategy } = currentStrategy(seller, adapter);
+  const prompts = buildIntentPromptLibrary(seller, adapter).slice(0, Math.min(seller.prompt_count, 12));
   return [
     `# ${seller.brand}`,
+    `## Premium Buyer Handbook / Product Playbook`,
     "",
-    L(lang, "# Pendahuluan", "# Introduction"),
-    seller.confirmed_product_description,
+    `**Niche:** ${seller.niche}`,
+    `**Audience:** ${seller.audience}`,
+    `**License:** ${seller.license}`,
     "",
-    L(lang, "# Janji Produk", "# Product Promise"),
-    L(
-      lang,
-      `Paket ini membantu ${seller.audience} memakai prompt untuk ${seller.niche} secara terstruktur, dengan contoh konkret dan checklist review.`,
-      `This pack helps ${seller.audience} use prompts for ${seller.niche} in a structured way, with concrete examples and a review checklist.`
-    ),
+    "---",
     "",
-    L(lang, "# Untuk Siapa", "# Who This Helps"),
-    mdList([seller.audience, L(lang, "Pengguna pemula yang ingin hasil rapi", "Beginners who want clean output"), L(lang, "Pengguna lanjutan yang ingin workflow", "Advanced users who want a workflow")]),
+    "# Product Promise",
+    strategy.core_promise,
     "",
-    L(lang, "# Cara Memakai Sistem Ini", "# How to Use This System"),
-    mdList([
-      L(lang, "Baca Product Brief", "Read the Product Brief"),
-      L(lang, "Buka PromptBook", "Open the PromptBook"),
-      L(lang, "Isi variabel dengan data nyata", "Fill variables with real data"),
-      L(lang, "Jalankan prompt, lalu review", "Run the prompt, then review"),
-    ]),
+    "# Why This Product Exists",
+    `Buyer sering ingin memakai AI untuk ${seller.niche}, tetapi hasilnya berisiko terlalu umum jika tidak ada urutan kerja, variabel input, contoh output, dan checklist validasi. Handbook ini dibuat agar buyer memiliki sistem kerja, bukan hanya daftar prompt mentah.`,
     "",
-    L(lang, "# Beginner Workflow", "# Beginner Workflow"),
-    mdList([
-      L(lang, "Pilih prompt yang paling dekat dengan kebutuhan", "Pick the closest prompt to your need"),
-      L(lang, "Isi variabel wajib", "Fill required variables"),
-      L(lang, "Bandingkan hasil dengan sample", "Compare result with the sample"),
-    ]),
+    "# Who This Is For",
+    mdList([seller.audience, "buyer yang ingin workflow prompt bertahap", "pengguna AI yang ingin output lebih mudah direview", "pemula maupun pengguna advanced yang tetap mau verifikasi manual"]),
     "",
-    L(lang, "# Advanced Workflow", "# Advanced Workflow"),
-    mdList([
-      L(lang, "Rangkai beberapa prompt jadi satu workflow", "Chain several prompts into one workflow"),
-      L(lang, "Tambahkan konteks spesifik", "Add specific context"),
-      L(lang, "Review setiap output sebelum dipakai", "Review every output before use"),
-    ]),
+    "# The Problem This Product Solves",
+    strategy.target_buyer_pain,
     "",
-    ...promptSummarySection,
-    L(lang, "# Contoh Penggunaan", "# Usage Examples"),
-    L(
-      lang,
-      `Contoh untuk ${seller.niche}: isi variabel dengan konteks nyata, jalankan prompt, lalu bandingkan output dengan kebutuhan dan revisi bila perlu.`,
-      `Example for ${seller.niche}: fill variables with real context, run the prompt, then compare output to your needs and revise if necessary.`
-    ),
+    "# System Overview",
+    `Paket ini terdiri dari Product Brief, PromptBook, PromptLibrary CSV, Usage Guide, Sample Input & Output, FAQ, Product Handbook, dan Buyer Output Review Checklist. Semua bagian dirancang untuk mendukung transformasi: ${strategy.buyer_transformation}.`,
     "",
-    L(lang, "# Panduan Verifikasi Manual", "# Manual Verification Guide"),
-    L(lang, "Selalu review output sebelum dipakai pada konteks nyata.", "Always review output before using it in a real context."),
+    "# Buyer Transformation",
+    strategy.buyer_transformation,
+    "",
+    "# Beginner Workflow",
+    mdList(["Baca Product Brief untuk memahami batas produk.", "Pilih prompt pertama sesuai kebutuhan.", "Isi variabel dengan data yang benar-benar dimiliki.", "Jalankan prompt di AI tool.", "Bandingkan output dengan sample.", "Review memakai QC_Scorecard sebelum memakai hasil."]),
+    "",
+    "# Advanced Workflow",
+    mdList(["Gabungkan 2-3 prompt secara berurutan.", "Tambahkan dokumen, angka, batasan, dan format output.", "Minta AI memisahkan fakta, asumsi, pertanyaan lanjutan, dan red flag.", "Buat beberapa variasi output.", "Verifikasi manual sebelum mengambil keputusan." ]),
+    "",
+    "# Core Prompt System",
+    ...prompts.flatMap((p, i) => [`## ${i + 1}. ${p.title}`, `**Purpose:** ${p.purpose}`, `**Variables:** ${p.input_variables.map((v) => `{{${v}}}`).join(", ")}`, "**Full Prompt:**", "```", p.full_prompt, "```", `**Expected Output:** ${p.expected_output}`, ""]),
+    "# Example 1: Beginner Filled Input and Output",
+    "```",
+    prompts[0]?.example_filled_input || `konteks: ${seller.niche}; tujuan: review awal`,
+    "```",
+    "Output yang baik harus memisahkan ringkasan, checklist, pertanyaan lanjutan, asumsi, dan hal yang perlu diverifikasi manual.",
+    "",
+    "# Example 2: Advanced Filled Input and Output",
+    "```",
+    prompts[1]?.example_filled_input || `konteks: ${seller.niche}; batasan: hindari klaim hasil pasti; format_output: tabel`,
+    "```",
+    "Output advanced sebaiknya memberi prioritas risiko, bukti yang perlu diminta, dan catatan keterbatasan analisis.",
+    "",
+    "# How to Evaluate AI Output",
+    mdList(["Cek apakah output menjawab tujuan prompt.", "Pisahkan fakta dan asumsi.", "Tandai klaim angka, dokumen, sumber, atau risiko yang perlu diverifikasi.", "Hapus klaim yang terlalu pasti.", "Lakukan review manusia sebelum output dipakai."]),
+    "",
+    "# Common Mistakes",
+    mdList(["Input terlalu umum.", "Meminta AI mengambil keputusan final.", "Menganggap output AI sebagai fakta tanpa bukti.", "Tidak menyertakan batasan.", "Tidak melakukan review manual."]),
+    "",
+    "# Buyer Quality Checklist",
+    mdList(["Input sudah spesifik.", "Output punya struktur jelas.", "Tidak ada klaim jaminan hasil.", "Ada daftar hal yang perlu diverifikasi.", "Ada catatan batasan penggunaan."]),
     "",
     "# FAQ",
-    L(lang, "Tidak ada jaminan hasil. Output perlu review manual.", "No guaranteed results. Output needs manual review."),
+    "Lihat 09_Buyer_FAQ.md untuk pertanyaan buyer. Intinya, produk ini adalah alat bantu prompt dan workflow, bukan software otomatis dan bukan pengganti review profesional.",
     "",
-    L(lang, "# Lisensi dan Penggunaan Aman", "# License and Safe Use"),
-    L(
-      lang,
-      `Lisensi: ${seller.license}. Jangan menjual ulang file asli apa adanya.`,
-      `License: ${seller.license}. Do not resell the original files as-is.`
-    ),
+    "# License and Safe Usage",
+    `Lisensi: ${seller.license}. Gunakan sesuai batas lisensi. Jangan menjual ulang file asli tanpa izin tertulis.`,
+    ...strategy.risk_notes.map((note) => `- ${note}`),
     "",
-    L(lang, "# Catatan Akhir", "# Final Notes"),
-    L(lang, "Kualitas hasil bergantung pada kualitas input dan review Anda.", "Output quality depends on your input quality and review."),
-  ].join("
-");
+    "# Final Notes",
+    `Gunakan handbook ini sebagai sistem kerja untuk ${seller.niche}. Hasil terbaik muncul ketika buyer memberi konteks nyata, mengecek output, dan melakukan validasi manual.`,
+  ].join("\n");
 }
-
 
 function marketplaceUploadAssetKit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
   return [
@@ -1659,21 +1633,31 @@ function marketplaceUploadAssetKit(seller: ReturnType<typeof sellerMeta>, adapte
 }
 
 function productManifestJson(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[], qc?: QCResult): string {
-  const payload = buildManifestPayload({ brand: seller.brand, niche: seller.niche, adapter, marketplaces, promptCount: seller.prompt_count, language: seller.language, targetMarket: seller.target_market, license: seller.license });
+  const payload = buildManifestPayload({ brand: seller.brand, niche: seller.niche, adapter, marketplaces, promptCount: seller.prompt_count, language: seller.language, license: seller.license, targetMarket: seller.target_market });
   const enriched = {
     ...payload,
-    architecture: PPA_V2_VERSION,
     qc_status: qc?.status ?? payload.qc_status,
     qc_score: qc?.score ?? null,
     qc_generated_at: qc?.generated_at ?? null,
     blocking_errors: qc?.blocking_errors ?? null,
     approval_enabled: qc?.approval_enabled ?? false,
-    validation_policy: { manual_upload_only: true, no_real_ai_api: true, no_marketplace_api: true, no_api_modules: true, buyer_package_must_be_clean: true },
+    validation_policy: {
+      manual_upload_only: true,
+      no_real_ai_api: true,
+      no_marketplace_api: true,
+      no_api_modules: true,
+      seller_review_required: true,
+      buyer_package_isolation_required: true,
+    },
   };
   return JSON.stringify(enriched, null, 2);
 }
 
 
+export function generateSyncedManifestContent(args: { seller: SellerMeta; adapter: string; marketplaces: string[]; qc: QCResult }): string {
+  const adapter = resolveAdapter(args.adapter || "CUSTOM", args.seller.niche || "");
+  return productManifestJson(args.seller, adapter, args.marketplaces || [], args.qc);
+}
 
 function readyToUploadChecklist(seller: ReturnType<typeof sellerMeta>): string {
   return [
@@ -1716,46 +1700,97 @@ function qcScorecardTemplate(seller: ReturnType<typeof sellerMeta>, qc?: QCResul
   return [
     `# Buyer Output Review Checklist — ${seller.brand}`,
     "",
-    "Gunakan checklist ini untuk mengecek output AI sebelum dipakai dalam konteks nyata.",
+    "Checklist ini untuk pembeli agar output AI tidak langsung dipakai mentah. Ini bukan laporan internal seller.",
     "",
-    "## Input Completeness",
-    mdList(["Konteks bisnis sudah jelas", "Klaim penjual ditulis terpisah dari fakta", "Dokumen yang tersedia disebutkan", "Batasan data ditulis", "Pertanyaan yang belum terjawab dicatat"]),
+    "## 1. Input Completeness",
+    mdList(["Tujuan penggunaan sudah jelas.", "Konteks/niche sudah spesifik.", "Target audience disebutkan.", "Batasan dan format output ditulis.", "Data sensitif atau rahasia tidak dimasukkan sembarangan."]),
     "",
-    "## Output Clarity",
-    mdList(["Output menjawab tujuan prompt", "Format mudah dibaca", "Ada daftar bukti yang perlu diminta", "Ada red flag", "Ada langkah verifikasi manual"]),
+    "## 2. Output Clarity",
+    mdList(["Output menjawab tujuan prompt.", "Struktur mudah dibaca.", "Ada pemisahan fakta, asumsi, dan saran.", "Ada langkah lanjut yang jelas.", "Bahasa sesuai kebutuhan buyer."]),
     "",
-    "## Due Diligence Safety",
-    mdList(["Tidak menyimpulkan bisnis pasti aman dibeli", "Tidak memberi nasihat hukum/pajak/finansial final", "Tidak membuat angka atau dokumen palsu", "Tidak mengabaikan risiko operasional", "Menyarankan konsultasi profesional untuk keputusan transaksi"]),
+    "## 3. Fact-Check Checklist",
+    mdList(["Angka, sumber, dokumen, dan klaim sudah diverifikasi.", "AI tidak mengarang data atau sumber.", "Klaim yang belum terbukti diberi label asumsi.", "Hasil penting dicek ulang dengan sumber asli."]),
     "",
-    "## Revision Checklist",
-    mdList(["Tambahkan data jika output terlalu umum", "Minta output membedakan fakta, asumsi, dan red flag", "Ulangi prompt dengan dokumen tambahan", "Bandingkan output dengan wawancara dan bukti nyata"]),
+    "## 4. No Overclaim Checklist",
+    mdList(["Tidak ada jaminan income, sales, viral, approval, profit, atau hasil tertentu.", "Tidak ada nasihat hukum/finansial/medis final jika bukan dari profesional.", "Tidak ada klaim palsu seperti testimonial, review, atau angka buyer fiktif."]),
     "",
-    "## Final Buyer Note",
-    "Checklist ini membantu review kualitas output. Keputusan akhir tetap berada pada buyer dan profesional yang relevan.",
-  ].join("\n");
-}
-
-export function generateSyncedManifestContent(args: { seller: SellerMeta; adapter?: string; marketplaces: string[]; qc: QCResult }): string {
-  const seller = sellerMeta(args.seller);
-  const adapter = resolveAdapter(args.adapter ?? "CUSTOM", seller.niche);
-  return productManifestJson(seller, adapter, args.marketplaces, args.qc);
+    "## 5. Revision Checklist",
+    mdList(["Perbaiki input jika output generik.", "Minta AI membuat versi yang lebih spesifik.", "Tambahkan konteks, contoh, batasan, dan format.", "Simpan versi final setelah review manual."]),
+    "",
+    qc ? `Technical QC snapshot seller/internal: ${qc.score}/100. Jangan tampilkan ini sebagai klaim kualitas kepada buyer.` : "",
+  ].filter(Boolean).join("\n");
 }
 
 export function generateActualQCScorecardContent(args: { seller: SellerMeta; qc: QCResult }): string {
-  return qcScorecardTemplate(sellerMeta(args.seller));
+  return qcScorecardTemplate(sellerMeta(args.seller), args.qc);
 }
 
 
-// ============================================================================
-// PPA v2 — Eight dedicated marketplace listing generators.
-// Buyer-safe only. No seller/internal wording. No legacy file names.
-// ID platforms: Bahasa Indonesia. Global platforms: English.
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ B1: MARKETPLACE LEAKAGE GUARD + 8 DEDICATED GENERATORS
+// ─────────────────────────────────────────────────────────────────────────────
 
-const MARKETPLACE_BUYER_INCLUDED_ID = [
+export const MARKETPLACE_LEAKAGE_PATTERNS: RegExp[] = [
+  /manual upload only/i,
+  /draft ini harus direview/i,
+  /diunggah manual oleh seller/i,
+  /tidak ada api marketplace/i,
+  /tidak ada auto-publish/i,
+  /auto-publish/i,
+  /seller wajib/i,
+  /seller toolkit/i,
+  /seller master toolkit/i,
+  /marketplace draft/i,
+  /pricing heuristic/i,
+  /pricing recommendation/i,
+  /thumbnail brief/i,
+  /cover generation brief/i,
+  /\bmanifest\b/i,
+  /approval enabled/i,
+  /blocking[_ ]errors/i,
+  /PASS_FINAL/,
+  /upload checklist/i,
+  /policy reminder/i,
+  /seller-reviewed/i,
+  /seller review/i,
+  /Insert content from/i,
+  /QC_Scorecard\.md/i,
+  /00_Seller_Master_Toolkit/i,
+  /12_Product_Manifest/i,
+  /06_QualityChecklist/i,
+  /07_License_Disclaimer/i,
+  /08_ManualUploadGuide/i,
+  /10_Pricing_Recommendation/i,
+  /11_Thumbnail_Brief/i,
+  /13_Ready_to_Upload_Checklist/i,
+  /14_Cover_Generation_Brief/i,
+  /15_Marketing_Video/i,
+  /21_Marketplace_Upload_Asset_Kit/i,
+  /99_Assumption_Register/i,
+];
+
+export function findMarketplaceLeaks(content: string): string[] {
+  const hits: string[] = [];
+  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
+    rx.lastIndex = 0;
+    if (rx.test(content || "")) hits.push(rx.source);
+  }
+  return hits;
+}
+
+function scrubMarketplaceLeaks(text: string): string {
+  let out = text;
+  for (const rx of MARKETPLACE_LEAKAGE_PATTERNS) {
+    rx.lastIndex = 0;
+    out = out.replace(rx, "");
+  }
+  return out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+const MK_BUYER_ID = [
   "Product Brief",
   "PromptBook (panduan prompt lengkap)",
-  "PromptLibrary CSV (langsung pakai di spreadsheet)",
+  "PromptLibrary CSV (siap dipakai di spreadsheet)",
   "Panduan Pemakaian (langkah demi langkah)",
   "Contoh Input & Output nyata",
   "FAQ Pembeli",
@@ -1763,10 +1798,10 @@ const MARKETPLACE_BUYER_INCLUDED_ID = [
   "Buyer Review Scorecard",
 ];
 
-const MARKETPLACE_BUYER_INCLUDED_EN = [
+const MK_BUYER_EN = [
   "Product Brief",
   "PromptBook (complete prompt guide)",
-  "PromptLibrary CSV (ready for spreadsheet use)",
+  "PromptLibrary CSV (spreadsheet-ready)",
   "Usage Guide (step-by-step)",
   "Sample Input & Output (concrete examples)",
   "Buyer FAQ",
@@ -1774,145 +1809,382 @@ const MARKETPLACE_BUYER_INCLUDED_EN = [
   "Buyer Review Scorecard",
 ];
 
-function isMarketplaceDD(seller: ReturnType<typeof sellerMeta>): boolean {
-  return isDueDiligenceSystem(seller) || /due diligence|akuisisi|acquisition|beli bisnis|membeli usaha|membeli bisnis/i.test(
-    `${seller.niche} ${seller.confirmed_product_description} ${seller.brand}`
-  );
+function mkIsDd(seller: ReturnType<typeof sellerMeta>): boolean {
+  return /due diligence|akuisisi|acquisition|beli bisnis|membeli usaha|membeli bisnis/i
+    .test(`${seller.niche} ${seller.confirmed_product_description} ${seller.brand}`);
 }
 
+// 1. SHOPEE — Bahasa Indonesia, lokal, bullet-driven
 function shopeeListingID(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
-  const judul = dd ? `${seller.brand} — Paket Prompt Cek Bisnis Sebelum Beli` : `${seller.brand} — Paket Prompt AI untuk ${seller.niche}`;
-  const deskripsi = dd
-    ? `Paket prompt digital untuk membantu **${seller.audience}** memeriksa bisnis sebelum dibeli. Susun pertanyaan ke pemilik usaha, cek klaim omzet, petakan risiko operasional, dan rangkum temuan sebelum konsultasi ke profesional.`
-    : `Paket prompt digital untuk **${seller.audience}** yang ingin output AI lebih spesifik dan konsisten di bidang ${seller.niche}. Dilengkapi contoh nyata dan panduan langkah demi langkah.`;
-  const cocokUntuk = dd
-    ? ["Calon pembeli bisnis kecil atau UMKM", "Individu yang ingin proses cek bisnis lebih terstruktur", "Pemula yang baru pertama kali mempertimbangkan akuisisi", "Konsultan yang membantu klien menilai sebuah usaha"]
-    : [seller.audience, "Pemula yang ingin output AI lebih spesifik", `Siapapun yang butuh workflow ${seller.niche} lebih terstruktur`];
-  const manfaat = dd
-    ? ["Susun pertanyaan wawancara ke pemilik usaha secara terstruktur", "Verifikasi klaim omzet dan biaya dasar", "Petakan risiko operasional sebelum keputusan", "Temukan red flag awal yang sering terlewat", "Ringkas temuan untuk dibawa ke konsultasi profesional"]
-    : [`Output ${seller.niche} lebih spesifik dan konsisten`, "Hemat waktu menyusun konten AI", "Contoh input dan output nyata siap pakai", "Panduan langkah demi langkah mudah diikuti", "Buyer Review Scorecard untuk cek kualitas output"];
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Listing Shopee — ${seller.brand}`, "", "## Judul Produk", judul, "", "## Deskripsi Singkat", deskripsi, "",
-    "## Cocok Untuk", mdList(cocokUntuk), "", "## Manfaat Utama", mdList(manfaat), "",
-    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pakai Singkat",
-    "1. Buka Product Handbook (PDF) untuk lihat daftar prompt.", "2. Pilih prompt sesuai kebutuhan.", "3. Isi bagian [konteks] dengan informasi spesifik Anda.", "4. Jalankan di ChatGPT, Claude, atau Gemini.", "5. Review output dan verifikasi dengan data nyata.", "",
-    "## Catatan Penting", dd ? "Produk ini adalah alat bantu riset awal. **Bukan** nasihat hukum, keuangan, pajak, valuasi, atau audit. Semua output AI wajib diverifikasi manual dan dikonsultasikan dengan profesional sebelum keputusan transaksi." : "Produk ini adalah alat bantu. Output AI tetap perlu direview sebelum dipakai pada konteks nyata. Tidak ada jaminan hasil.", "",
-    "## Pengiriman", "Produk berupa file digital. Pembeli mengunduh file setelah transaksi selesai sesuai sistem Shopee. Unduh instan setelah pembayaran terkonfirmasi.", "",
-    "## FAQ", "**Apakah ini software atau aplikasi?** Bukan. Ini paket file digital berisi prompt siap pakai.", "**AI mana yang bisa dipakai?** ChatGPT, Claude, Gemini, atau AI teks lainnya.", "**Apakah hasilnya dijamin akurat?** Tidak. Output AI perlu direview dan diverifikasi manual.", dd ? "**Apakah ini nasihat hukum atau keuangan?** Bukan. Ini alat bantu riset awal. Konsultasikan profesional untuk keputusan final." : "**Apakah cocok untuk pemula?** Ya. Ada panduan langkah demi langkah yang mudah diikuti.", "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital di Shopee setelah pembayaran berhasil.", "**Apakah ada refund?** Ikuti kebijakan refund produk digital Shopee.",
+    `# Listing Shopee — ${seller.brand}`, "",
+    "## Judul Produk",
+    dd ? `${seller.brand} — Paket Prompt Cek Bisnis Sebelum Beli`
+       : `${seller.brand} — Paket Prompt AI untuk ${seller.niche}`, "",
+    "## Deskripsi Singkat",
+    dd ? `Paket prompt digital untuk membantu ${seller.audience} memeriksa bisnis sebelum dibeli: susun pertanyaan ke pemilik usaha, cek klaim omzet, petakan risiko, rangkum temuan sebelum konsultasi profesional.`
+       : `Paket prompt digital untuk ${seller.audience} agar output AI lebih spesifik dan konsisten di bidang ${seller.niche}. Dilengkapi contoh nyata dan panduan langkah demi langkah.`, "",
+    "## Cocok Untuk",
+    mdList(dd ? ["Calon pembeli bisnis kecil/UMKM", "Yang ingin proses cek bisnis lebih terstruktur", "Pemula yang baru pertama kali mempertimbangkan akuisisi"]
+              : [seller.audience, "Pemula yang ingin output AI lebih spesifik", `Yang butuh workflow ${seller.niche} lebih rapi`]), "",
+    "## Manfaat Utama",
+    mdList(dd ? ["Susun pertanyaan wawancara ke pemilik usaha", "Verifikasi klaim omzet dan biaya dasar", "Petakan risiko operasional", "Temukan red flag awal", "Ringkas temuan untuk konsultasi profesional"]
+              : [`Output ${seller.niche} lebih spesifik`, "Hemat waktu menyusun konten AI", "Contoh input/output nyata", "Panduan langkah demi langkah", "Buyer Review Scorecard"]), "",
+    "## Isi Paket Digital", mdList(MK_BUYER_ID), "",
+    "## Cara Pakai Singkat",
+    "1. Buka Product Handbook (PDF) untuk lihat daftar prompt.",
+    "2. Pilih prompt sesuai kebutuhan.",
+    "3. Isi bagian [konteks] dengan informasi spesifik Anda.",
+    "4. Jalankan di ChatGPT, Claude, atau Gemini.",
+    "5. Review output dan verifikasi dengan data nyata.", "",
+    "## Catatan Penting",
+    dd ? "Produk ini alat bantu riset awal. Bukan nasihat hukum, keuangan, pajak, valuasi, atau audit. Semua output AI wajib diverifikasi dan dikonsultasikan ke profesional sebelum keputusan transaksi."
+       : "Produk ini alat bantu. Output AI tetap perlu direview sebelum dipakai pada konteks nyata. Tidak ada jaminan hasil.", "",
+    "## Pengiriman",
+    "Produk berupa file digital. Pembeli mengunduh setelah transaksi selesai sesuai sistem Shopee. Unduh instan setelah pembayaran terkonfirmasi.", "",
+    "## FAQ",
+    "**Apakah ini software/aplikasi?** Bukan. Ini paket file digital berisi prompt siap pakai.",
+    "**AI mana yang bisa dipakai?** ChatGPT, Claude, Gemini, atau AI teks lainnya.",
+    "**Apakah hasilnya dijamin akurat?** Tidak. Output AI perlu diverifikasi.",
+    dd ? "**Apakah ini nasihat hukum/keuangan?** Bukan. Ini alat bantu riset awal." : "**Apakah cocok pemula?** Ya, ada panduan lengkap.",
+    "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital di Shopee setelah pembayaran berhasil.",
   ].join("\n"));
 }
 
+// 2. TOKOPEDIA — Bahasa Indonesia, formal e-commerce
 function tokopediaListingID(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Listing Tokopedia — ${seller.brand}`, "", "## Nama Produk", dd ? `${seller.brand} — Paket Prompt Due Diligence untuk Pembelian Bisnis Kecil` : `${seller.brand} — Paket Prompt AI Premium untuk ${seller.niche}`, "",
-    "## Deskripsi Produk", dd ? `File digital berisi sistem prompt terstruktur untuk membantu **${seller.audience}** melakukan pemeriksaan bisnis awal sebelum pembelian. Mencakup pertanyaan wawancara penjual, checklist verifikasi omzet, pemetaan risiko operasional, dan panduan ringkasan temuan.` : `File digital berisi sistem prompt terstruktur untuk **${seller.audience}** yang bekerja di bidang ${seller.niche}. Setiap prompt dilengkapi panduan pemakaian, contoh input/output, dan checklist kualitas output.`, "",
-    "## Fitur Utama", mdList(dd ? ["Pertanyaan wawancara penjual yang terstruktur", "Checklist verifikasi klaim omzet", "Pemetaan risiko operasional", "Scanner red flag awal", "Template ringkasan temuan sebelum konsultasi"] : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input dan output untuk setiap prompt", "Panduan pemakaian langkah demi langkah", "CSV untuk diimpor ke spreadsheet", "Buyer Review Scorecard"]), "",
-    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pemakaian", "1. Buka Product Handbook (PDF) setelah mengunduh paket.", "2. Pilih prompt yang sesuai kebutuhan.", "3. Isi variabel [konteks] dengan informasi spesifik.", "4. Jalankan prompt di ChatGPT, Claude, atau Gemini.", "5. Evaluasi output menggunakan Buyer Review Scorecard.", "",
-    "## Kompatibilitas AI", mdList(["ChatGPT", "Claude", "Gemini", "AI teks berbasis chat lainnya"]), "", "## Pengiriman", "Produk berupa file digital. Pembeli mengunduh file melalui sistem pengiriman produk digital Tokopedia setelah pembayaran dikonfirmasi.", "",
-    "## Catatan Penggunaan", dd ? "Produk ini adalah alat bantu riset awal. Bukan nasihat hukum, pajak, keuangan, valuasi, atau audit. Seluruh output AI harus diverifikasi manual dan dikonsultasikan dengan profesional sebelum keputusan transaksi." : "Produk digital. Output AI perlu direview sebelum dipakai. Tidak ada jaminan hasil bisnis.", "",
-    "## FAQ", "**Apakah ini software?** Bukan. Ini file digital berisi prompt siap pakai.", "**Apakah bisa dipakai langsung?** Ya. Buka Handbook, pilih prompt, isi konteks, jalankan di AI.", "**Apakah ada garansi hasil?** Tidak. Output AI perlu diverifikasi manual.", dd ? "**Apakah ini pengganti due diligence profesional?** Bukan. Ini alat bantu riset awal saja." : "**Apakah cocok untuk pemula?** Ya, ada panduan lengkap.", "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital Tokopedia setelah pembayaran berhasil.",
+    `# Listing Tokopedia — ${seller.brand}`, "",
+    "## Nama Produk",
+    dd ? `${seller.brand} — Paket Prompt Due Diligence Pembelian Bisnis Kecil`
+       : `${seller.brand} — Paket Prompt AI Premium untuk ${seller.niche}`, "",
+    "## Deskripsi Produk",
+    dd ? `File digital berisi sistem prompt terstruktur untuk membantu ${seller.audience} memeriksa bisnis sebelum pembelian: pertanyaan wawancara penjual, checklist verifikasi omzet, pemetaan risiko operasional, dan panduan ringkasan temuan.`
+       : `File digital berisi sistem prompt terstruktur untuk ${seller.audience} di bidang ${seller.niche}. Setiap prompt dilengkapi panduan pemakaian, contoh input/output, dan checklist kualitas.`, "",
+    "## Fitur Utama",
+    mdList(dd ? ["Pertanyaan wawancara penjual terstruktur", "Checklist verifikasi klaim omzet", "Pemetaan risiko operasional", "Scanner red flag awal", "Template ringkasan temuan"]
+              : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input/output tiap prompt", "Panduan langkah demi langkah", "CSV untuk spreadsheet", "Buyer Review Scorecard"]), "",
+    "## Isi Paket Digital", mdList(MK_BUYER_ID), "",
+    "## Cara Pemakaian",
+    "1. Buka Product Handbook (PDF) setelah mengunduh paket.",
+    "2. Pilih prompt yang sesuai kebutuhan.",
+    "3. Isi variabel [konteks] dengan informasi spesifik.",
+    "4. Jalankan prompt di ChatGPT, Claude, atau Gemini.",
+    "5. Evaluasi output dengan Buyer Review Scorecard.", "",
+    "## Kompatibilitas AI", mdList(["ChatGPT (GPT-4/GPT-3.5)", "Claude (Anthropic)", "Gemini (Google)", "AI teks berbasis chat lainnya"]), "",
+    "## Pengiriman",
+    "Produk berupa file digital. Pembeli mengunduh melalui sistem pengiriman produk digital Tokopedia setelah pembayaran dikonfirmasi.", "",
+    "## Catatan Penggunaan",
+    dd ? "Produk ini alat bantu riset awal. Bukan nasihat hukum, pajak, keuangan, valuasi, atau audit. Seluruh output AI harus diverifikasi dan dikonsultasikan ke profesional sebelum keputusan transaksi."
+       : "Produk digital. Output AI perlu direview sebelum dipakai. Tidak ada jaminan hasil bisnis.", "",
+    "## FAQ",
+    "**Apakah ini software?** Bukan. Ini file digital berisi prompt siap pakai.",
+    "**Apakah bisa dipakai langsung?** Ya. Buka Handbook, pilih prompt, isi konteks, jalankan di AI.",
+    "**Apakah ada garansi hasil?** Tidak. Output AI perlu diverifikasi.",
+    "**Bagaimana cara mengunduh?** Ikuti prosedur unduh produk digital Tokopedia setelah pembayaran berhasil.",
   ].join("\n"));
 }
 
+// 3. LYNK.ID — Bahasa Indonesia, creator-funnel, CTA
 function lynkListingID(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Sales Page Lynk.id — ${seller.brand}`, "", "## Headline", dd ? `Periksa Bisnis Incaran Anda Lebih Terstruktur — ${seller.brand}` : `Hasilkan ${seller.niche} Lebih Cepat — ${seller.brand}`, "",
-    "## Subheadline", dd ? "Bantu Anda menyusun pertanyaan ke penjual, cek klaim omzet, dan petakan risiko sebelum konsultasi profesional." : `Bantu ${seller.audience} bekerja lebih cepat dan rapi di ${seller.niche} menggunakan prompt AI yang terstruktur.`, "",
-    "## Yang Anda Dapatkan", mdList(dd ? ["Pertanyaan wawancara ke pemilik usaha", "Checklist verifikasi omzet dan biaya", "Pemetaan risiko operasional", "Red flag scanner awal", "Template ringkasan temuan"] : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input dan output nyata", "Panduan langkah demi langkah", "CSV PromptLibrary", "Buyer Review Scorecard"]), "",
-    "## Isi Paket Digital", mdList(MARKETPLACE_BUYER_INCLUDED_ID), "", "## Cara Pakai", "1. Unduh paket setelah pembayaran.", "2. Buka Product Handbook (PDF).", "3. Pilih prompt, isi konteks, jalankan di ChatGPT / Claude / Gemini.", "4. Review output sebelum digunakan.", "",
-    "## Catatan Penting", dd ? "Bukan nasihat hukum, keuangan, pajak, atau valuasi. Alat bantu riset awal saja." : "Produk digital. Output AI perlu direview. Tidak ada jaminan hasil.", "", "## AI yang Kompatibel", mdList(["ChatGPT", "Claude", "Gemini", "AI teks berbasis chat lainnya"]), "",
-    "## FAQ", "**Apakah ini software?** Bukan, ini paket file digital.", "**Hasilnya dijamin?** Tidak. Output AI perlu diverifikasi.", dd ? "**Ini nasihat hukum/keuangan?** Bukan. Alat bantu riset awal." : "**Cocok pemula?** Ya, ada panduan lengkap.", "", "## CTA", dd ? "Unduh sekarang dan mulai periksa bisnis incaran Anda lebih terstruktur." : `Unduh sekarang dan mulai hasilkan ${seller.niche} lebih cepat.`,
+    `# Sales Page Lynk.id — ${seller.brand}`, "",
+    "## Headline",
+    dd ? `Periksa Bisnis Incaran Anda Lebih Terstruktur — ${seller.brand}`
+       : `Hasilkan ${seller.niche} Lebih Cepat — ${seller.brand}`, "",
+    "## Subheadline",
+    dd ? `Susun pertanyaan ke penjual, cek klaim omzet, dan petakan risiko sebelum konsultasi profesional.`
+       : `Bantu ${seller.audience} bekerja lebih cepat dan rapi di ${seller.niche} memakai prompt AI yang sudah terbukti.`, "",
+    "## Yang Anda Dapatkan",
+    mdList(dd ? ["Pertanyaan wawancara ke pemilik usaha", "Checklist verifikasi omzet & biaya", "Pemetaan risiko operasional", "Red flag scanner awal", "Template ringkasan temuan"]
+              : [`${seller.prompt_count} prompt terstruktur siap pakai`, "Contoh input/output nyata", "Panduan langkah demi langkah", "CSV PromptLibrary", "Buyer Review Scorecard"]), "",
+    "## Isi Paket Digital", mdList(MK_BUYER_ID), "",
+    "## Cara Pakai",
+    "1. Unduh paket setelah pembayaran.",
+    "2. Buka Product Handbook (PDF).",
+    "3. Pilih prompt, isi konteks, jalankan di ChatGPT / Claude / Gemini.",
+    "4. Review output sebelum digunakan.", "",
+    "## Catatan Penting",
+    dd ? "Bukan nasihat hukum, keuangan, pajak, atau valuasi. Alat bantu riset awal saja."
+       : "Produk digital. Output AI perlu direview. Tidak ada jaminan hasil.", "",
+    "## AI yang Kompatibel", mdList(["ChatGPT", "Claude", "Gemini", "AI teks lainnya"]), "",
+    "## FAQ",
+    "**Apakah ini software?** Bukan, paket file digital.",
+    "**Hasilnya dijamin?** Tidak. Output AI perlu diverifikasi.", "",
+    "## CTA",
+    dd ? "Unduh sekarang dan mulai periksa bisnis incaran Anda lebih terstruktur."
+       : `Unduh sekarang dan mulai hasilkan ${seller.niche} lebih cepat.`,
   ].join("\n"));
 }
 
+// 4. ENVATO — English, structured professional asset
 function envatoListingEN(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
-  const itemTitle = dd ? `${seller.brand} — AI Due Diligence Prompt System for Small Business Acquisition` : `${seller.brand} — AI Prompt Pack for ${seller.niche}`;
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Envato Listing — ${seller.brand}`, "", "## Item Title", itemTitle, "", "## Short Description", dd ? "A structured prompt system for small business acquisition buyers. Prepare seller interviews, verify revenue claims, map operational risks, and summarize findings before consulting professionals." : `A polished AI prompt pack for ${seller.audience}. Produces specific, consistent output for ${seller.niche} with usage guide, sample I/O, and a buyer review scorecard.`, "",
-    "## Item Overview", dd ? `${seller.brand} is a prompt-based due diligence support toolkit for small business acquisition buyers. It helps you structure seller interview questions, verify revenue and cost claims, map operational risks, review customer and supplier dependency, scan for basic financial red flags, and summarize findings before consulting lawyers, accountants, or business advisors.\n\nThis is not legal, financial, tax, valuation, investment, or audit advice. All AI output requires human review and professional verification before any transaction decision.` : `${seller.brand} is a structured prompt pack for ${seller.audience} working on ${seller.niche}. Instead of generic AI output, you get specific, context-driven results guided by ${seller.prompt_count} tested prompts with examples and review notes.`, "",
-    "## Key Features", mdList(dd ? ["Seller interview question builder", "Revenue and cost verification checklist", "Operational risk mapping prompts", "Customer dependency review", "Supplier and vendor risk review", "Basic financial red flag scanner", "Legal document question list", "Deal assumption register", "Risk summary workflow"] : [`${seller.prompt_count} structured prompts organized by workflow stage`, "Full usage guide with step-by-step instructions", "Concrete sample input and output pairs", "CSV prompt library", "Buyer review scorecard", "Premium PDF handbook"]), "",
-    "## Included Files", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Best For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers evaluating a small business", "Solo entrepreneurs exploring acquisition", "Business consultants helping clients assess a deal", "Micro-investors running preliminary checks"] : [seller.audience, "Beginners who want cleaner AI output", "Professionals who want a structured prompt workflow"]), "",
-    "## Compatible With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How It Works", "1. Open the Product Handbook (PDF) to browse all prompts.", "2. Select the prompt matching your current stage or goal.", "3. Fill in [context] with your specific information.", "4. Run the prompt in your preferred AI tool.", "5. Review the output critically before using it.", dd ? "6. Log findings and red flags. Consult qualified professionals before making transaction decisions." : "6. Treat output as a working draft. Verify before use in real-world contexts.", "",
-    "## Limitations & Safe Use", dd ? "This is a preliminary research and decision-support product. It is not legal, financial, tax, valuation, investment, or audit advice. It does not guarantee deal quality, business performance, financing approval, or acquisition success. All AI output requires human review and professional verification before any transaction." : "This is a research and decision-support product. It does not guarantee business results. All AI output should be reviewed before use in real contexts.", "", "## Delivery", "Instant digital download after purchase. Files delivered as a downloadable package per Envato platform delivery settings.", "", "## Suggested Tags", dd ? "due diligence, business acquisition, small business, AI prompts, buyer checklist, risk assessment, business research, acquisition tool, prompt pack" : `ai prompts, prompt pack, ${seller.niche.toLowerCase()}, digital product, prompt templates, productivity, ai workflow`,
+    `# Envato Listing — ${seller.brand}`, "",
+    "## Item Title",
+    dd ? `${seller.brand} — AI Due Diligence Prompt System for Small Business Acquisition`
+       : `${seller.brand} — AI Prompt Pack for ${seller.niche}`, "",
+    "## Short Description",
+    dd ? `A structured prompt system for small business acquisition buyers: prepare seller interviews, verify revenue claims, map operational risks, and summarize findings before consulting professionals.`
+       : `A polished AI prompt pack for ${seller.audience}. Produces specific, consistent output for ${seller.niche} — with usage guide, sample I/O, and a buyer review scorecard.`, "",
+    "## Item Overview",
+    dd ? `${seller.brand} is a prompt-based due diligence support toolkit. It helps you structure seller interview questions, verify revenue and cost claims, map operational risks, review customer and supplier dependency, scan basic financial red flags, and summarize findings before consulting lawyers, accountants, or advisors.\n\nThis is NOT legal, financial, tax, valuation, investment, or audit advice. All AI output requires human review and professional verification before any transaction.`
+       : `${seller.brand} is a structured prompt pack for ${seller.audience} working on ${seller.niche}. Instead of generic AI output, you get specific, context-driven results guided by ${seller.prompt_count} tested prompts — each with purpose, usage note, and sample output.`, "",
+    "## Key Features",
+    mdList(dd ? ["Seller interview question builder", "Revenue & cost verification checklist", "Operational risk mapping", "Customer & supplier dependency review", "Basic financial red flag scanner", "Deal assumption register", "Risk summary workflow"]
+              : [`${seller.prompt_count} structured prompts by workflow stage`, "Full usage guide", "Concrete sample input/output pairs", "CSV prompt library (spreadsheet-ready)", "Buyer review scorecard", "Premium PDF handbook"]), "",
+    "## Included Files", mdList(MK_BUYER_EN), "",
+    "## Best For",
+    mdList(dd ? ["Small business acquisition buyers", "First-time buyers evaluating a business", "Solo entrepreneurs exploring acquisition", "Consultants helping clients assess a deal"]
+              : [seller.audience, "Beginners wanting cleaner AI output", "Professionals wanting a structured prompt workflow"]), "",
+    "## Compatible With", mdList(["ChatGPT (GPT-4/GPT-3.5)", "Claude (Anthropic)", "Gemini (Google)", "Any text-based AI assistant"]), "",
+    "## How It Works",
+    "1. Open the Product Handbook (PDF) to browse all prompts.",
+    "2. Select the prompt matching your stage or goal.",
+    "3. Fill in [context] with your specific information.",
+    "4. Run the prompt in your preferred AI tool.",
+    "5. Review the output critically before using it.", "",
+    "## Limitations & Safe Use",
+    dd ? "This is a preliminary research and decision-support product. NOT legal, financial, tax, valuation, investment, or audit advice. It does not guarantee deal quality or acquisition success. All AI output requires human review and professional verification."
+       : "This is a research and decision-support product. It does not guarantee business results. All AI output should be reviewed before use. No income, sales, or approval claims are made.", "",
+    "## Delivery",
+    "Instant digital download after purchase. Files delivered as a downloadable package per Envato platform delivery settings.", "",
+    "## Suggested Tags",
+    dd ? "due diligence, business acquisition, small business, AI prompts, buyer checklist, risk assessment, acquisition tool, prompt pack"
+       : `ai prompts, prompt pack, ${seller.niche.toLowerCase()}, digital product, prompt templates, productivity, ai workflow`,
   ].join("\n"));
 }
 
+// 5. GUMROAD — English, storytelling/problem-driven
 function gumroadListingEN(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Gumroad Listing — ${seller.brand}`, "", "## Headline", dd ? `Stop guessing. Start asking better questions. — ${seller.brand}` : `Stop getting generic AI output. — ${seller.brand}`, "", "## The Problem", dd ? `Most small business buyers walk into seller meetings without a structured question list. ${seller.brand} gives you a prompt-based system to prepare better questions, verify claims, map risks, and summarize findings before consulting professionals.` : `Most people using AI for ${seller.niche} get generic output because prompts are too short. ${seller.brand} gives ${seller.audience} a structured system with examples and review checks.`, "", "## What You Get", mdList(dd ? ["Seller interview question builder", "Revenue verification checklist", "Operational risk mapping", "Red flag scanner", "Deal assumption register", "Risk summary workflow", "Product Handbook PDF", "Buyer Review Scorecard"] : [`${seller.prompt_count} structured prompts`, "Usage guide", "Sample input/output pairs", "CSV prompt library", "Buyer review scorecard", "Premium PDF handbook"]), "", "## Who This Is For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Solo entrepreneurs exploring acquisition", "Business consultants helping clients assess deals"] : [seller.audience, "Beginners who want better AI output", "Professionals who want a structured workflow"]), "", "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text AI"]), "", "## How to Use", "1. Download and open the Product Handbook PDF.", "2. Choose the prompt for your current stage.", "3. Fill in your context.", "4. Run in your preferred AI tool.", "5. Review output before acting on it.", "", "## Important", dd ? "This is a preliminary research tool. Not legal, financial, tax, valuation, investment, or audit advice. All output requires human verification and professional consultation before any transaction." : "This is a research and decision-support product. AI output should be reviewed before use. No results are guaranteed.", "", "## Delivery", "Instant digital download via Gumroad. Files available immediately after payment confirmation. No shipping, no waiting.", "", "## License", seller.license,
+    `# Gumroad Listing — ${seller.brand}`, "",
+    "## Headline",
+    dd ? `Stop guessing. Start asking better questions. — ${seller.brand}`
+       : `Stop getting generic AI output. — ${seller.brand}`, "",
+    "## The Problem",
+    dd ? `Most small business buyers walk into seller meetings without a structured question list. They accept revenue claims at face value and miss operational risks hiding in plain sight.\n\n${seller.brand} gives you a prompt-based system to prepare better questions, verify claims, map risks, and summarize findings — before you consult lawyers, accountants, or advisors.`
+       : `Most people using AI for ${seller.niche} get generic output because their prompts are too short and vague.\n\n${seller.brand} gives ${seller.audience} a structured prompt system with context-driven inputs, sample outputs, and a buyer review scorecard.`, "",
+    "## What You Get", mdList(MK_BUYER_EN), "",
+    "## Who This Is For",
+    mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Solo entrepreneurs exploring acquisition", "Consultants helping clients assess deals"]
+              : [seller.audience, "Beginners who want better AI output", "Professionals who want a structured workflow"]), "",
+    "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text AI"]), "",
+    "## How to Use",
+    "1. Download and open the Product Handbook PDF.",
+    "2. Choose the prompt for your current stage.",
+    "3. Fill in your context.",
+    "4. Run in your preferred AI tool.",
+    "5. Review output before acting on it.", "",
+    "## Important",
+    dd ? "This is a preliminary research tool. Not legal, financial, tax, valuation, or investment advice. All output requires human verification and professional consultation before any transaction."
+       : "This is a research and decision-support product. AI output should be reviewed before use. No results are guaranteed.", "",
+    "## Delivery",
+    "Instant digital download via Gumroad. Files available immediately after payment confirmation. No shipping, no waiting.", "",
+    "## License", seller.license,
   ].join("\n"));
 }
 
+// 6. ETSY — English, digital template, tag-heavy
 function etsyListingEN(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
+  const tags = dd ? ["due diligence","business acquisition","small business research","AI prompts","buyer checklist","risk assessment","prompt pack","digital download","acquisition tool"]
+                  : ["AI prompts","prompt pack","digital download","instant download",seller.niche.toLowerCase(),"productivity","template","AI tools"];
   return scrubMarketplaceLeaks([
-    `# Etsy Listing — ${seller.brand}`, "", "## Title", dd ? `AI Due Diligence Prompt Pack — Small Business Acquisition Research Tool — ${seller.brand}` : `AI Prompt Pack for ${seller.niche} — ${seller.brand} — Instant Digital Download`, "", "## Description", dd ? "This digital download includes a structured AI prompt system for small business acquisition buyers. Use it to prepare seller interview questions, verify revenue claims, map operational risks, and organize findings before consulting professionals. This is a digital product. No physical item will be shipped. Not legal, financial, tax, valuation, or audit advice." : `This digital download includes a structured AI prompt pack for ${seller.audience} working on ${seller.niche}. Includes prompts, usage guide, sample input/output, CSV library, and premium PDF handbook. No physical item will be shipped.`, "", "## What's Included", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Compatible AI Tools", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How to Use", "1. Download your files immediately after purchase.", "2. Open the Product Handbook PDF.", "3. Choose the prompt you need.", "4. Fill in [context] with your specific situation.", "5. Run in ChatGPT, Claude, or Gemini.", "6. Review the output before use.", "", "## Limitations & Safe Use", dd ? "This is a preliminary research and decision-support product. Not legal, financial, tax, valuation, investment, or audit advice. All output requires professional verification before transaction decisions." : "AI output should be reviewed before real-world use. No results are guaranteed. Not professional advice.", "", "## Delivery", "This is a digital product — instant download. No physical item will be shipped. Files are available immediately after purchase confirmation on Etsy.", "", "## Tags", dd ? "due diligence, business acquisition, small business research, AI prompts, buyer checklist, business analysis, risk assessment, prompt pack, digital download, acquisition tool" : `AI prompts, prompt pack, digital download, instant download, ${seller.niche.toLowerCase()}, productivity, template, AI tools`, "", "## License", seller.license,
+    `# Etsy Listing — ${seller.brand}`, "",
+    "## Title",
+    dd ? `AI Due Diligence Prompt Pack — Small Business Acquisition Research Tool — ${seller.brand}`
+       : `AI Prompt Pack for ${seller.niche} — ${seller.brand} — Instant Digital Download`, "",
+    "## Description",
+    dd ? `This digital download includes a structured AI prompt system for small business acquisition buyers: prepare seller interview questions, verify revenue claims, map operational risks, and organize findings before consulting professionals.\n\nThis is a DIGITAL PRODUCT. No physical item will be shipped. Files are available immediately after purchase.\n\nNot legal, financial, tax, valuation, or audit advice. All AI output requires human review.`
+       : `This digital download includes a structured AI prompt pack for ${seller.audience} working on ${seller.niche}.\n\nIncludes ${seller.prompt_count} prompts, usage guide, sample input/output, CSV library, and a premium PDF handbook.\n\nThis is a DIGITAL PRODUCT. No physical item will be shipped. Files are available immediately after purchase.`, "",
+    "## What's Included", mdList(MK_BUYER_EN), "",
+    "## Compatible AI Tools", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "",
+    "## How to Use",
+    "1. Download your files immediately after purchase.",
+    "2. Open the Product Handbook PDF.",
+    "3. Choose the prompt you need.",
+    "4. Fill in [context] with your situation.",
+    "5. Run in ChatGPT, Claude, or Gemini.",
+    "6. Review the output before use.", "",
+    "## Limitations & Safe Use",
+    dd ? "Preliminary research and decision-support product. Not legal, financial, tax, valuation, investment, or audit advice. All output requires professional verification before transaction decisions."
+       : "AI output should be reviewed before real-world use. No results are guaranteed. Not professional advice.", "",
+    "## Delivery",
+    "This is a digital product — instant download. No physical item will be shipped. Files are available immediately after purchase confirmation on Etsy.", "",
+    "## Tags", tags.join(", "), "",
+    "## License", seller.license,
   ].join("\n"));
 }
 
+// 7. LEMON SQUEEZY — English, SaaS product page
 function lemonSqueezyListingEN(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Lemon Squeezy Listing — ${seller.brand}`, "", "## Product Headline", dd ? `${seller.brand} — Structured Due Diligence Prompts for Small Business Buyers` : `${seller.brand} — AI Prompt System for ${seller.niche}`, "", "## Subheadline", dd ? "Prepare better seller interviews, verify claims, and map risks before consulting professionals." : `Helps ${seller.audience} produce specific, consistent AI output for ${seller.niche}.`, "", "## What You Get", mdList(dd ? ["Seller interview question builder", "Revenue verification checklist", "Operational risk mapper", "Customer dependency review", "Red flag scanner", "Risk summary workflow"] : [`${seller.prompt_count} structured prompts`, "Context-driven inputs", "Sample input/output pairs", "CSV prompt library", "Buyer review scorecard"]), "", "## Included Files", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI"]), "", "## How It Works", "1. Purchase and download immediately.", "2. Open the Product Handbook PDF.", "3. Select the prompt for your goal.", "4. Fill in your context.", "5. Run in your AI tool of choice.", "6. Review output before acting.", "", "## Limitations", dd ? "Preliminary research tool only. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transaction decisions." : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "", "## Delivery", "Instant digital download via Lemon Squeezy. Files available immediately after payment confirmation.", "", "## License", seller.license,
+    `# Lemon Squeezy Listing — ${seller.brand}`, "",
+    "## Product Headline",
+    dd ? `${seller.brand} — Structured Due Diligence Prompts for Small Business Buyers`
+       : `${seller.brand} — AI Prompt System for ${seller.niche}`, "",
+    "## Subheadline",
+    dd ? `Prepare better seller interviews, verify claims, and map risks — before consulting professionals.`
+       : `Helps ${seller.audience} produce specific, consistent AI output for ${seller.niche}.`, "",
+    "## What You Get",
+    mdList(dd ? ["Seller interview question builder", "Revenue verification checklist", "Operational risk mapper", "Customer dependency review", "Red flag scanner", "Risk summary workflow"]
+              : [`${seller.prompt_count} structured prompts`, "Context-driven inputs", "Sample input/output pairs", "CSV prompt library", "Buyer review scorecard"]), "",
+    "## Included Files", mdList(MK_BUYER_EN), "",
+    "## Works With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI"]), "",
+    "## How It Works",
+    "1. Purchase and download immediately.",
+    "2. Open the Product Handbook PDF.",
+    "3. Select the prompt for your goal.",
+    "4. Fill in your context.",
+    "5. Run in your AI tool of choice.",
+    "6. Review output before acting.", "",
+    "## Limitations & Safe Use",
+    dd ? "Preliminary research tool only. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transaction decisions."
+       : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "",
+    "## Delivery",
+    "Instant digital download via Lemon Squeezy. Files available immediately after payment confirmation.", "",
+    "## License", seller.license,
   ].join("\n"));
 }
 
+// 8. PAYHIP — English, conversion-focused
 function payhipListingEN(seller: ReturnType<typeof sellerMeta>): string {
-  const dd = isMarketplaceDD(seller);
+  const dd = mkIsDd(seller);
   return scrubMarketplaceLeaks([
-    `# Payhip Listing — ${seller.brand}`, "", "## Product Title", dd ? `${seller.brand} — AI Prompt System for Small Business Due Diligence` : `${seller.brand} — AI Prompt Pack for ${seller.niche}`, "", "## Product Description", dd ? "A complete prompt-based system for small business acquisition buyers. Covers seller interview questions, revenue verification, operational risk mapping, red flag scanning, and findings summary before consulting professionals." : `A structured AI prompt pack for ${seller.audience}. Includes ${seller.prompt_count} prompts, usage guide, sample input/output, CSV library, and premium PDF handbook.`, "", "## What's Included", mdList(MARKETPLACE_BUYER_INCLUDED_EN), "", "## Best For", mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Consultants helping clients assess deals"] : [seller.audience, "Beginners wanting better AI output", "Professionals building structured workflows"]), "", "## Compatible With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "", "## How to Use", "1. Download your files after purchase.", "2. Open the Product Handbook PDF.", "3. Choose your prompt.", "4. Fill in [context].", "5. Run in your preferred AI tool.", "6. Review before acting.", "", "## Limitations & Safe Use", dd ? "Preliminary research tool. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transactions." : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "", "## Delivery", "Instant digital download via Payhip. Files are available immediately after payment is complete.", "", "## License", seller.license,
+    `# Payhip Listing — ${seller.brand}`, "",
+    "## Product Title",
+    dd ? `${seller.brand} — AI Prompt System for Small Business Due Diligence`
+       : `${seller.brand} — AI Prompt Pack for ${seller.niche}`, "",
+    "## Product Description",
+    dd ? `A complete prompt-based system for small business acquisition buyers: seller interview questions, revenue verification, operational risk mapping, red flag scanning, and findings summary — structured to support your work before consulting professionals.`
+       : `A structured AI prompt pack for ${seller.audience}. Includes ${seller.prompt_count} prompts, usage guide, sample input/output, CSV library, and a premium PDF handbook.`, "",
+    "## What's Included", mdList(MK_BUYER_EN), "",
+    "## Best For",
+    mdList(dd ? ["Small business acquisition buyers", "First-time buyers", "Consultants helping clients assess deals"]
+              : [seller.audience, "Beginners wanting better AI output", "Professionals building structured workflows"]), "",
+    "## Compatible With", mdList(["ChatGPT", "Claude", "Gemini", "Any text-based AI assistant"]), "",
+    "## How to Use",
+    "1. Download your files after purchase.",
+    "2. Open the Product Handbook PDF.",
+    "3. Choose your prompt.",
+    "4. Fill in [context].",
+    "5. Run in your preferred AI tool.",
+    "6. Review before acting.", "",
+    "## Limitations & Safe Use",
+    dd ? "Preliminary research tool. Not legal, financial, tax, valuation, or investment advice. All output requires human review and professional consultation before transactions."
+       : "Research and decision-support product. AI output should be reviewed before use. No results guaranteed.", "",
+    "## Delivery",
+    "Instant digital download via Payhip. Files are available immediately after payment is complete.", "",
+    "## License", seller.license,
   ].join("\n"));
 }
+
+// ✅ B1 DISPATCHER — Menggantikan generic adapterCopy version
+function marketplaceListing(fileName: string, seller: ReturnType<typeof sellerMeta>, _adapter: ResolvedAdapter, marketplaces: string[]): string {
+  if (fileName === "19_Marketplace_Bundle_Index.md") return marketplaceBundleIndex(seller, marketplaces);
+  if (/Shopee/i.test(fileName))                          return shopeeListingID(seller);
+  if (/Tokopedia/i.test(fileName))                       return tokopediaListingID(seller);
+  if (/LynkID|Lynk\.id|Lynk_id/i.test(fileName))         return lynkListingID(seller);
+  if (/Envato/i.test(fileName))                          return envatoListingEN(seller);
+  if (/Gumroad/i.test(fileName))                         return gumroadListingEN(seller);
+  if (/Etsy/i.test(fileName))                            return etsyListingEN(seller);
+  if (/LemonSqueezy|Lemon_Squeezy|Lemon Squeezy/i.test(fileName)) return lemonSqueezyListingEN(seller);
+  if (/Payhip/i.test(fileName))                          return payhipListingEN(seller);
+  return envatoListingEN(seller); // safe fallback, never generic
+}
+
 
 function marketplaceBundleIndex(seller: ReturnType<typeof sellerMeta>, marketplaces: string[]): string {
-  const mps = (marketplaces ?? []).map((m) => normalizeMarketplace(String(m)));
   return [
     `# Marketplace Bundle Index — ${seller.brand}`,
     "",
     "## Marketplace Files Generated",
-    ...marketplaceModulesFor(mps).filter((m) => m.file !== MARKETPLACE_BUNDLE_MODULE.file).map((m) => `- ${m.file}`),
+    ...marketplaceModulesFor(marketplaces).map((m) => `- ${m.file}`),
     "",
-    "## Recommended Use",
-    "1. Open the listing file for the selected platform.",
-    "2. Copy the platform-specific title, description, features, delivery note, and FAQ.",
-    "3. Review platform policy and adjust category/tags manually before publishing.",
-    "4. Do a final human review for claims, delivery instructions, and price.",
+    "## Recommended Upload Order",
+    "1. Review product ZIP and license.",
+    "2. Prepare thumbnail/cover.",
+    "3. Copy listing draft for selected marketplace.",
+    "4. Verify policy and publish manually.",
     "",
-    "## Note",
-    "This index is seller-side. It should not be included in the buyer ZIP.",
+    "## Manual Upload Reminder",
+    "Semua marketplace file adalah draft. Seller harus upload manual, mengecek kebijakan, dan mereview klaim sebelum publish.",
   ].join("\n");
 }
 
-function marketplaceListing(
-  fileName: string,
-  seller: ReturnType<typeof sellerMeta>,
-  _adapter: ResolvedAdapter,
-  marketplaces: string[]
-): string {
-  if (fileName === MARKETPLACE_BUNDLE_MODULE.file) return marketplaceBundleIndex(seller, marketplaces);
-  if (/Shopee/i.test(fileName)) return shopeeListingID(seller);
-  if (/Tokopedia/i.test(fileName)) return tokopediaListingID(seller);
-  if (/LynkID|Lynk\.id|Lynk_id|Lynk/i.test(fileName)) return lynkListingID(seller);
-  if (/Envato/i.test(fileName)) return envatoListingEN(seller);
-  if (/Gumroad/i.test(fileName)) return gumroadListingEN(seller);
-  if (/Etsy/i.test(fileName)) return etsyListingEN(seller);
-  if (/LemonSqueezy|Lemon_Squeezy|Lemon\s*Squeezy|Lemon/i.test(fileName)) return lemonSqueezyListingEN(seller);
-  if (/Payhip/i.test(fileName)) return payhipListingEN(seller);
-  return envatoListingEN(seller);
+// ---------- Premium Product Architecture v2: Seller Master Toolkit ----------
+
+function platformVoice(platform: string): { tone: string; currency: string; lang: string } {
+  const p = normalizeMarketplace(platform);
+  if (p === "Shopee") return { tone: "SEO-heavy Bahasa Indonesia, short bullet-driven", currency: "IDR", lang: "id" };
+  if (p === "Tokopedia") return { tone: "Formal e-commerce Bahasa Indonesia, emphasize file digital + manual download", currency: "IDR", lang: "id" };
+  if (p === "Lynk.id") return { tone: "Creator-funnel, personal, direct CTA", currency: "IDR", lang: "id" };
+  if (p === "Gumroad") return { tone: "Global storytelling, transformation-focused", currency: "USD", lang: "en" };
+  if (p === "Etsy") return { tone: "Digital template positioning, tag-heavy, instant download wording (no platform-approval claims)", currency: "USD", lang: "en" };
+  if (p === "Envato") return { tone: "Structured documentation, technical quality, organized files", currency: "USD", lang: "en" };
+  if (p === "LemonSqueezy") return { tone: "SaaS-like product page, clean headline, conversion-focused, license clarity", currency: "USD", lang: "en" };
+  return { tone: "Neutral", currency: "USD", lang: "en" };
 }
 
 function marketplaceAdapterCopy(platform: string, seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter): string {
-  const mp = normalizeMarketplace(platform);
-  const def = Object.values(MARKETPLACE_MODULES).find((m) => m.marketplace === mp);
-  if (!def) return `_Listing untuk ${mp} belum tersedia._`;
-  const content = marketplaceListing(def.file, seller, adapter, [mp]);
-  const preview = content.split("\n").slice(0, 24).join("\n");
-  return [`\n### ${mp} — Listing Preview`, "```markdown", preview, "...", "```"].join("\n");
+  const v = platformVoice(platform);
+  const p = normalizeMarketplace(platform);
+  const title = `${seller.brand} — ${seller.niche}`;
+  const sub = adapter === "CODING_AUTOMATION"
+    ? "PRD + Database Schema + Auth + API + Automation + Deployment Prompts"
+    : adapter === "EVIDENCE_HANDBOOK"
+      ? "Evidence Table + Source Log + Claim Checker + Safety Notes"
+      : `${seller.prompt_count} structured prompts + sample + checklist`;
+  return [
+    `### ${p}`,
+    `**Voice / Tone:** ${v.tone}`,
+    `**Suggested Currency:** ${v.currency}`,
+    "",
+    `**Title:** ${title} — ${sub}`,
+    `**Subtitle/Headline:** ${v.lang === "id"
+      ? `Paket prompt terstruktur untuk ${seller.audience}. Upload manual, review seller, no fake claims.`
+      : `Structured prompt system for ${seller.audience}. Manual delivery. Seller-reviewed. No income guarantee.`}`,
+    "",
+    "**Bullet Benefits:**",
+    "- " + (v.lang === "id" ? "PromptBook lengkap (purpose, full prompt, contoh input/output, checklist QA)" : "Premium PromptBook with purpose, full prompt, examples, QA checklist"),
+    "- " + (v.lang === "id" ? "CSV PromptLibrary siap dibuka di spreadsheet" : "CSV PromptLibrary opens in any spreadsheet"),
+    "- " + (v.lang === "id" ? "Sample Input/Output untuk pemula dan advanced" : "Sample Input/Output for beginner and advanced users"),
+    "- " + (v.lang === "id" ? "Usage Guide + Buyer FAQ" : "Usage Guide + Buyer FAQ"),
+    "- " + (v.lang === "id" ? "Premium PDF Handbook" : "Premium PDF Handbook"),
+    "",
+    "**Full Description:**",
+    v.lang === "id"
+      ? `${seller.confirmed_product_description}\n\nPaket ini membantu ${seller.audience} menyusun ${seller.niche} secara terstruktur menggunakan ${seller.prompt_count} prompt yang sudah dipasangkan dengan contoh input/output, panduan pemakaian, FAQ, premium PDF handbook, dan QC scorecard. Semua file dikirim sebagai file digital, dengan upload manual oleh seller. Tidak ada klaim penjualan, viral, atau approval marketplace.`
+      : `${seller.confirmed_product_description}\n\nThis pack helps ${seller.audience} build ${seller.niche} workflows using ${seller.prompt_count} prompts paired with worked examples, usage guide, FAQ, a premium PDF handbook, and a QC scorecard. Files are delivered digitally and listed manually by the seller. No sales/viral/marketplace approval claims are made.`,
+    "",
+    `**Keywords / Tags:** ${v.lang === "id" ? "prompt pack, prompt AI, " : "ai prompts, prompt pack, "}${seller.niche.toLowerCase()}, ${adapter.toLowerCase().replace(/_/g, " ")}, ${p.toLowerCase()}`,
+    `**Suggested Category:** Digital Goods / Templates / AI Prompts`,
+    "",
+    "**Upload Checklist:**",
+    "- [ ] Cover image disiapkan sesuai brief.",
+    "- [ ] Buyer ZIP atau link delivery tested.",
+    "- [ ] Description direview tanpa klaim terlarang.",
+    "- [ ] Tags / category dipilih sesuai aturan platform.",
+    "- [ ] License & disclaimer disertakan.",
+    "- [ ] Kebijakan platform terbaru sudah dicek.",
+    "",
+    "**Recommended Image Order:**",
+    "1. Hero cover (title + subtitle + 3 benefit bullets)",
+    "2. File map mockup (preview isi folder)",
+    "3. PromptBook page preview",
+    "4. Sample Input/Output preview",
+    "5. PDF Handbook cover preview",
+    "",
+    `**Platform-Specific Positioning:** ${v.tone}.`,
+    "",
+  ].join("\n");
 }
 
 function sellerMasterToolkit(seller: ReturnType<typeof sellerMeta>, adapter: ResolvedAdapter, marketplaces: string[]): string {
@@ -2028,31 +2300,39 @@ export function generateModuleContent(args: {
   adapter?: string;
 }): { content: string; validation: "PASS" | "FAIL" } {
   if (isForbiddenModuleKey(args.moduleKey) || isForbiddenModuleKey(args.fileName)) return { content: "", validation: "FAIL" };
-  if ((IGNORED_LEGACY_MODULES as readonly string[]).includes(args.fileName)) return { content: "", validation: "FAIL" };
   const seller = sellerMeta(args.seller);
-  const intent = detectProductIntentFromInputs({ niche: seller.niche, description: seller.confirmed_product_description, brand: seller.brand, audience: seller.audience, adapter: args.adapter });
-  const adapter = intent.recommendedAdapter || resolveAdapter(args.adapter ?? "CUSTOM", seller.niche);
+  const adapter = resolveAdapter(args.adapter ?? "CUSTOM", seller.niche);
   let content = "";
   switch (args.fileName) {
     case "01_Product_Brief.md": content = productBrief(seller, adapter, args.marketplaces); break;
-    case "02_PromptBook.md": content = promptBook(seller, adapter, intent.promptCategories); break;
-    case "03_PromptLibrary.csv": content = promptLibraryCsv(seller, adapter, intent.promptCategories); break;
+    case "02_PromptBook.md": content = promptBook(seller, adapter); break;
+    case "03_PromptLibrary.csv": content = promptLibraryCsv(seller, adapter); break;
     case "04_UsageGuide.md": content = usageGuide(seller, adapter); break;
     case "05_Sample_Input_Output.md": content = sampleInputOutput(seller, adapter); break;
+    case "06_QualityChecklist.md": content = qualityChecklist(seller, adapter); break;
+    case "07_License_Disclaimer.md": content = licenseDisclaimer(seller); break;
+    case "08_ManualUploadGuide.md": content = manualUploadGuide(args.marketplaces); break;
     case "09_Buyer_FAQ.md": content = buyerFAQ(seller); break;
+    case "10_Pricing_Recommendation.md": content = pricingRecommendation(seller); break;
+    case "11_Thumbnail_Brief.md": content = thumbnailBrief(seller, adapter); break;
+    case "14_Cover_Generation_Brief.md": content = coverGenerationBrief(seller, adapter); break;
+    case "15_Marketing_Video_CTA_Prompt.md": content = marketingVideoCtaPrompt(seller, adapter); break;
     case "20_Complete_PDF_Product_Draft.md": content = completePdfProductDraft(seller, adapter, args.marketplaces); break;
+    case "21_Marketplace_Upload_Asset_Kit.md": content = marketplaceUploadAssetKit(seller, adapter, args.marketplaces); break;
+    case "12_Product_Manifest.json": content = productManifestJson(seller, adapter, args.marketplaces); break;
+    case "13_Ready_to_Upload_Checklist.md": content = readyToUploadChecklist(seller); break;
+    case "99_Assumption_Register.md": content = assumptionRegister(seller, adapter, args.marketplaces); break;
     case "QC_Scorecard.md": content = qcScorecardTemplate(seller); break;
     case "00_Seller_Master_Toolkit.md": content = sellerMasterToolkit(seller, adapter, args.marketplaces); break;
-    case "12_Product_Manifest.json": content = productManifestJson(seller, adapter, args.marketplaces); break;
-    case "19_Marketplace_Bundle_Index.md": content = marketplaceBundleIndex(seller, args.marketplaces); break;
     default:
-      if (Object.values(MARKETPLACE_MODULES).some((m) => m.file === args.fileName) || args.fileName === MARKETPLACE_BUNDLE_MODULE.file) content = marketplaceListing(args.fileName, seller, adapter, args.marketplaces);
-      else return { content: "", validation: "FAIL" };
+      if (Object.values(MARKETPLACE_MODULES).some((m) => m.file === args.fileName) || args.fileName === MARKETPLACE_BUNDLE_MODULE.file) {
+        content = marketplaceListing(args.fileName, seller, adapter, args.marketplaces);
+      } else {
+        return { content: "", validation: "FAIL" };
+      }
   }
-  const clean = sanitizeOutput(content);
-  return { content: clean, validation: validateGeneratedContent(clean) ? "PASS" : "FAIL" };
+  return { content: sanitizeOutput(content), validation: validateGeneratedContent(content) ? "PASS" : "FAIL" };
 }
-
 
 function sanitizeOutput(content: string): string {
   let out = content;
@@ -2079,25 +2359,71 @@ function hasNegation(line: string): boolean {
   return /(tidak|jangan|hindari|bukan|never|do not|don't|no\s+)/i.test(line);
 }
 
+function validateCsvHeader(header: string): { valid: boolean; missing: string[]; found: string[] } {
+  const expected = ["id", "title", "prompt", "variables", "sample_input", "notes"];
+  const found = header.replace(/^\uFEFF/, "").split(",").map((c) => c.trim().toLowerCase()).filter(Boolean);
+  const missing = expected.filter((e) => !found.includes(e));
+  return { valid: missing.length === 0, missing, found };
+}
+
+const BUYER_LEAK_TERMS = [
+  "Seller Review", "seller toolkit", "pricing heuristic", "marketplace draft", "upload checklist", "manual upload guide",
+  "thumbnail brief", "cover generation brief", "marketing video script", "product manifest", "assumption register",
+  "approval enabled", "PASS_FINAL", "blocking errors", ...IGNORED_LEGACY_MODULES,
+];
+
+function buyerContentLeakFiles(modules: { file_name: string; content: string | null }[]): string[] {
+  const buyer = new Set<string>(FINAL_BUYER_MODULES as readonly string[]);
+  return modules
+    .filter((m) => buyer.has(m.file_name))
+    .filter((m) => BUYER_LEAK_TERMS.some((term) => new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(m.content || "")))
+    .map((m) => m.file_name);
+}
+
+function hasRequiredPdfSections(content: string): boolean {
+  const required = ["Product Promise", "Why This Product Exists", "Who This Is For", "System Overview", "Buyer Transformation", "Beginner Workflow", "Advanced Workflow", "Core Prompt System", "How to Evaluate", "Common Mistakes", "Buyer Quality Checklist", "License"];
+  return required.every((section) => new RegExp(section, "i").test(content));
+}
+
+function promptBookHasPremiumDepth(content: string, expected: number): boolean {
+  const sections = (content.match(/^##\s+\d+\./gm) || []).length;
+  const requiredTerms = ["Purpose", "When to Use", "Input Variables", "Beginner Example", "Advanced Example", "Full Prompt", "Expected Output", "Quality Checklist", "Common Mistakes", "Manual Verification"];
+  return sections >= expected && requiredTerms.every((term) => new RegExp(term, "i").test(content));
+}
+
+function marketplaceCopyDifferentiated(toolkit: string, marketplaces: string[]): boolean {
+  const selected = marketplaces.map(normalizeMarketplace).filter(Boolean);
+  if (selected.length <= 1) return true;
+  return selected.every((mp) => new RegExp(`###\\s+${mp}|##\\s+${mp}|\\b${mp}\\b`, "i").test(toolkit));
+}
+
 const QC_WEIGHTS: Record<string, number> = {
-  [QC_CHECK_IDS.ALL_CORE_FILES_EXIST]: 18,
-  [QC_CHECK_IDS.SELECTED_MARKETPLACE_FILES_EXIST]: 5,
-  [QC_CHECK_IDS.NO_UNSELECTED_MARKETPLACE_FILES]: 3,
-  [QC_CHECK_IDS.NO_API_MODULES]: 10,
-  [QC_CHECK_IDS.NO_PLACEHOLDER_TEXT]: 10,
-  [QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS]: 7,
-  [QC_CHECK_IDS.PROMPT_COUNT_MATCHES]: 6,
+  [QC_CHECK_IDS.ALL_CORE_FILES_EXIST]: 10,
+  [QC_CHECK_IDS.NO_API_MODULES]: 8,
+  [QC_CHECK_IDS.NO_PLACEHOLDER_TEXT]: 8,
+  [QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS]: 8,
+  [QC_CHECK_IDS.PROMPT_COUNT_MATCHES]: 7,
   [QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES]: 6,
-  [QC_CHECK_IDS.UNIQUE_PROMPT_BODIES]: 8,
+  [QC_CHECK_IDS.UNIQUE_PROMPT_BODIES]: 5,
   [QC_CHECK_IDS.SAMPLE_IO_EXISTS]: 5,
-  [QC_CHECK_IDS.LICENSE_EXISTS]: 5,
-  [QC_CHECK_IDS.PRICING_MARKED_HEURISTIC]: 3,
-  [QC_CHECK_IDS.MARKETPLACE_FAQ_AND_DELIVERY]: 4,
-  [QC_CHECK_IDS.MANIFEST_JSON_VALID]: 4,
-  [QC_CHECK_IDS.ASSUMPTION_REGISTER_EXISTS]: 3,
-  [QC_CHECK_IDS.QC_SCORECARD_EXISTS]: 2,
-  [QC_CHECK_IDS.MANUAL_UPLOAD_DISCLAIMER]: 3,
-  [QC_CHECK_IDS.ANCHOR_REFLECTION]: 1,
+  [QC_CHECK_IDS.MANIFEST_JSON_VALID]: 8,
+  [QC_CHECK_IDS.QC_SCORECARD_EXISTS]: 5,
+  [QC_CHECK_IDS.BUYER_CONTENT_NO_SELLER_LEAKAGE]: 10,
+  [QC_CHECK_IDS.NO_IGNORED_LEGACY_FILES]: 8,
+  [QC_CHECK_IDS.CSV_HEADER_VALID]: 6,
+  [QC_CHECK_IDS.PDF_DRAFT_REQUIRED_SECTIONS]: 7,
+  [QC_CHECK_IDS.PDF_MINIMUM_CONTENT_LENGTH]: 5,
+  [QC_CHECK_IDS.SELLER_TOOLKIT_EXISTS]: 8,
+  [QC_CHECK_IDS.SELLER_TOOLKIT_HAS_PRICING]: 4,
+  [QC_CHECK_IDS.SELLER_TOOLKIT_HAS_PLATFORM_LISTINGS]: 4,
+  [QC_CHECK_IDS.PROMPTBOOK_PREMIUM_DEPTH]: 8,
+  [QC_CHECK_IDS.ADAPTER_INTENT_MATCH]: 7,
+  [QC_CHECK_IDS.MARKETPLACE_COPY_DIFFERENTIATED]: 5,
+  [QC_CHECK_IDS.MARKETPLACE_NO_LEAKAGE]: 10,
+  [QC_CHECK_IDS.MARKETPLACE_LANGUAGE_ROUTING]: 8,
+  [QC_CHECK_IDS.MARKETPLACE_NO_NEAR_DUPLICATES]: 8,
+  [QC_CHECK_IDS.MARKETPLACE_STRUCTURE_COMPLETE]: 4,
+  [QC_CHECK_IDS.PDF_SOURCE_CLEAN]: 8,
 };
 
 function scoreStatus(score: number): "NOT_SELL_READY" | "SELL_READY_STARTER_BETA" | "SELL_READY_PREMIUM_DRAFT" {
@@ -2115,50 +2441,20 @@ const BLOCKING_IDS = new Set<string>([
   QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES,
   QC_CHECK_IDS.UNIQUE_PROMPT_BODIES,
   QC_CHECK_IDS.SAMPLE_IO_EXISTS,
-  QC_CHECK_IDS.LICENSE_EXISTS,
   QC_CHECK_IDS.MANIFEST_JSON_VALID,
-  QC_CHECK_IDS.ASSUMPTION_REGISTER_EXISTS,
   QC_CHECK_IDS.QC_SCORECARD_EXISTS,
+  QC_CHECK_IDS.BUYER_CONTENT_NO_SELLER_LEAKAGE,
+  QC_CHECK_IDS.NO_IGNORED_LEGACY_FILES,
+  QC_CHECK_IDS.CSV_HEADER_VALID,
+  QC_CHECK_IDS.PDF_DRAFT_REQUIRED_SECTIONS,
+  QC_CHECK_IDS.PDF_MINIMUM_CONTENT_LENGTH,
+  QC_CHECK_IDS.SELLER_TOOLKIT_EXISTS,
+  QC_CHECK_IDS.ADAPTER_INTENT_MATCH,
+  QC_CHECK_IDS.MARKETPLACE_NO_LEAKAGE,
+  QC_CHECK_IDS.MARKETPLACE_LANGUAGE_ROUTING,
+  QC_CHECK_IDS.MARKETPLACE_NO_NEAR_DUPLICATES,
+  QC_CHECK_IDS.PDF_SOURCE_CLEAN,
 ]);
-
-
-export interface CommercialReadinessResult {
-  score: number;
-  passed: boolean;
-  checks: { id: string; ok: boolean; weight: number; note: string }[];
-}
-
-export function computeCommercialReadiness(args: {
-  promptCount: number;
-  modules: { file_name: string; content: string | null }[];
-}): CommercialReadinessResult {
-  const byFile = (f: string) => args.modules.find((m) => m.file_name === f)?.content || "";
-  const brief = byFile("01_Product_Brief.md");
-  const book = byFile("02_PromptBook.md");
-  const usage = byFile("04_UsageGuide.md");
-  const sample = byFile("05_Sample_Input_Output.md");
-  const faq = byFile("09_Buyer_FAQ.md");
-  const pdf = byFile("20_Complete_PDF_Product_Draft.md");
-
-  const checks: CommercialReadinessResult["checks"] = [];
-  const add = (id: string, ok: boolean, weight: number, note: string) => checks.push({ id, ok, weight, note });
-
-  add("transformation_clarity", /membantu|helps|menyusun|build|structure/i.test(brief) && brief.length > 600, 12, "Product Brief explains a clear transformation.");
-  add("specific_workflow", /(Beginner Workflow|Advanced Workflow)/i.test(usage) && /(Beginner Workflow|Advanced Workflow)/i.test(pdf), 12, "Beginner + Advanced workflow present.");
-  add("prompt_specificity", (book.match(/\*\*Full Prompt:\*\*/g) || []).length >= args.promptCount, 12, "Each prompt has a full prompt body.");
-  add("output_format_clarity", /\*\*Expected Output:\*\*|Expected Output/i.test(book), 8, "Expected output described.");
-  add("realistic_examples", (sample.match(/^##\s+Sample\s+\d+/gim) || []).length >= 3, 12, "At least 3 concrete samples.");
-  add("pdf_depth", pdf.length > 4000 && (pdf.match(/^#\s+/gm) || []).length >= 8, 14, "PDF playbook is deep enough.");
-  const leakAll = [brief, book, usage, sample, faq, pdf].some((c) => findBuyerLeaks(c).length > 0);
-  add("no_internal_language", !leakAll, 12, "No seller/internal wording in buyer files.");
-  add("faq_relevance", faq.length > 300 && (faq.match(/^##\s+\d+/gim) || []).length >= 4, 8, "FAQ has 4+ relevant entries.");
-  add("sample_realism", /Sample User Input|Sample Input|Example AI Output|Example Filled Input/i.test(sample), 8, "Samples show input and output.");
-
-  const total = checks.reduce((sum, check) => sum + check.weight, 0);
-  const got = checks.reduce((sum, check) => sum + (check.ok ? check.weight : 0), 0);
-  const score = Math.round((got / total) * 100);
-  return { score, passed: score >= 85, checks };
-}
 
 export function runQC(args: {
   promptCount: number;
@@ -2166,170 +2462,304 @@ export function runQC(args: {
   anchors: string[];
   confirmedDescription: string;
   marketplaces?: string[];
+  adapter?: string;
+  niche?: string;
+  brand?: string;
+  audience?: string;
 }): QCResult {
   const modules = args.modules ?? [];
   const checks: QCCheckItem[] = [];
-  const add = (id: string, name: string, status: "PASS" | "FAIL" | "WARNING", message: string, weight = 5) => checks.push({ id, name, status, weight, message });
+  const add = (id: string, name: string, status: "PASS" | "FAIL" | "WARNING", message: string, details?: Record<string, unknown>) => {
+    checks.push({ id, name, status, weight: QC_WEIGHTS[id] ?? 0, message, details });
+  };
   const fileSet = new Set(modules.map((m) => m.file_name));
   const byFile = (file: string) => modules.find((m) => m.file_name === file);
-  const expectedFiles = [...FINAL_BUYER_MODULES, SELLER_TOOLKIT_FILE, ...ADMIN_MODULES];
-  const missing = expectedFiles.filter((file) => !fileSet.has(file));
-  add("PPA_V2_FILES_COMPLETE", "PPA v2 file lengkap", missing.length ? "FAIL" : "PASS", missing.length ? `Missing: ${missing.join(", ")}` : "Buyer, seller, dan admin files lengkap.", 12);
-  const legacy = modules.filter((m) => (IGNORED_LEGACY_MODULES as readonly string[]).includes(m.file_name));
-  add("NO_IGNORED_LEGACY_FILES", "Tidak ada legacy file", legacy.length ? "FAIL" : "PASS", legacy.length ? `Legacy files: ${legacy.map((m) => m.file_name).join(", ")}` : "Tidak ada legacy file di output.", 12);
-  const leaks = modules.filter((m) => (FINAL_BUYER_MODULES as readonly string[]).includes(m.file_name) && findBuyerLeaks(m.content || "").length > 0);
-  add("BUYER_CONTENT_CLEAN", "Buyer content bebas seller/internal leakage", leaks.length ? "FAIL" : "PASS", leaks.length ? `Leakage: ${leaks.map((m) => m.file_name).join(", ")}` : "Buyer content bersih.", 12);
+
+  const expected = REQUIRED_CORE_MODULES.map((m) => m.file);
+  const missingCore = expected.filter((file) => !fileSet.has(file));
+  add(QC_CHECK_IDS.ALL_CORE_FILES_EXIST, "V2 modules complete", missingCore.length ? "FAIL" : "PASS", missingCore.length ? `Missing: ${missingCore.join(", ")}` : "Buyer, seller, and admin modules complete.");
+
+  const ignoredPresent = modules.filter((m) => IGNORED_LEGACY_MODULES.includes(m.file_name as any));
+  add(QC_CHECK_IDS.NO_IGNORED_LEGACY_FILES, "No ignored legacy files", ignoredPresent.length ? "FAIL" : "PASS", ignoredPresent.length ? `Legacy files present: ${ignoredPresent.map((m) => m.file_name).join(", ")}` : "No legacy seller/admin files in final V2 modules.");
+
   const apiModules = modules.filter((m) => isForbiddenModuleKey(m.module_key) || isForbiddenModuleKey(m.file_name));
-  add(QC_CHECK_IDS.NO_API_MODULES, "Tidak ada API_* module", apiModules.length ? "FAIL" : "PASS", apiModules.length ? `API module: ${apiModules.map((m) => m.file_name).join(", ")}` : "Manual upload only aman.", 8);
+  add(QC_CHECK_IDS.NO_API_MODULES, "No API modules", apiModules.length ? "FAIL" : "PASS", apiModules.length ? `API module: ${apiModules.map((m) => m.file_name).join(", ")}` : "Manual upload only. No marketplace API modules.");
+
   const unfinished = modules.filter((m) => m.status !== "acked" || m.validation !== "PASS" || !m.content);
-  add("all_modules_acked", "Semua modul selesai", unfinished.length ? "FAIL" : "PASS", unfinished.length ? `${unfinished.length} modul belum acked/PASS.` : "Semua modul acked dan PASS.", 8);
+  add("all_modules_acked", "All modules acked", unfinished.length ? "FAIL" : "PASS", unfinished.length ? `${unfinished.length} modules not acked/PASS.` : "All generated modules are acked and PASS.");
+
   const placeholderFiles = modules.filter((m) => (m.content || "") && PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(m.content || "")));
-  add(QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, "Tidak ada placeholder", placeholderFiles.length ? "FAIL" : "PASS", placeholderFiles.length ? `Placeholder di: ${placeholderFiles.map((m) => m.file_name).join(", ")}` : "Tidak ada placeholder.", 10);
+  add(QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, "No placeholder text", placeholderFiles.length ? "FAIL" : "PASS", placeholderFiles.length ? `Placeholder in: ${placeholderFiles.map((m) => m.file_name).join(", ")}` : "No placeholder/condensed output.");
+
   const forbiddenFiles: string[] = [];
-  for (const m of modules) for (const claim of FORBIDDEN_CLAIMS) {
-    const rx = new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    if ((m.content || "").split(/\r?\n/).some((line) => rx.test(line) && !hasNegation(line))) forbiddenFiles.push(`${m.file_name}: ${claim}`);
+  for (const m of modules) {
+    const lines = (m.content || "").split(/\r?\n/);
+    for (const claim of FORBIDDEN_CLAIMS) {
+      const rx = new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      if (lines.some((line) => rx.test(line) && !hasNegation(line))) forbiddenFiles.push(`${m.file_name}: ${claim}`);
+    }
   }
-  add(QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, "Tidak ada klaim terlarang", forbiddenFiles.length ? "FAIL" : "PASS", forbiddenFiles.length ? forbiddenFiles.slice(0, 5).join("; ") : "Tidak ada klaim terlarang positif.", 8);
-  const bodies = extractPromptBodies(byFile("02_PromptBook.md")?.content || "");
-  add(QC_CHECK_IDS.PROMPT_COUNT_MATCHES, "Jumlah prompt sesuai", bodies.length === args.promptCount ? "PASS" : "FAIL", `PromptBook: ${bodies.length}, expected: ${args.promptCount}`, 7);
-  add(QC_CHECK_IDS.UNIQUE_PROMPT_BODIES, "Prompt body unik", bodies.length > 0 && new Set(bodies).size === bodies.length ? "PASS" : "FAIL", bodies.length ? `Unique ${new Set(bodies).size}/${bodies.length}` : "Prompt bodies tidak ditemukan.", 7);
+  add(QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, "No forbidden claims", forbiddenFiles.length ? "FAIL" : "PASS", forbiddenFiles.length ? forbiddenFiles.slice(0, 5).join("; ") : "No positive forbidden claims detected.");
+
+  const buyerLeaks = buyerContentLeakFiles(modules);
+  add(QC_CHECK_IDS.BUYER_CONTENT_NO_SELLER_LEAKAGE, "Buyer content has no seller leakage", buyerLeaks.length ? "FAIL" : "PASS", buyerLeaks.length ? `Seller/admin leakage in: ${buyerLeaks.join(", ")}` : "Buyer files are buyer-facing.");
+
+  const pb = byFile("02_PromptBook.md");
+  const bodies = extractPromptBodies(pb?.content || "");
+  add(QC_CHECK_IDS.PROMPT_COUNT_MATCHES, "Prompt count matches", bodies.length === args.promptCount ? "PASS" : "FAIL", `PromptBook: ${bodies.length}, expected: ${args.promptCount}`);
+  const uniqueBodies = new Set(bodies).size;
+  add(QC_CHECK_IDS.UNIQUE_PROMPT_BODIES, "Prompt bodies unique", bodies.length > 0 && uniqueBodies === bodies.length ? "PASS" : "FAIL", bodies.length ? `Unique ${uniqueBodies}/${bodies.length}` : "Prompt bodies not found.");
+  add(QC_CHECK_IDS.PROMPTBOOK_PREMIUM_DEPTH, "PromptBook premium depth", pb?.content && promptBookHasPremiumDepth(pb.content, args.promptCount) ? "PASS" : "FAIL", "PromptBook must include purpose, examples, full prompt, expected output, checklist, mistakes, and verification notes.");
+
   const csv = byFile("03_PromptLibrary.csv");
-  const header = (csv?.content || "").split(/\r?\n/)[0]?.replace(/^\uFEFF/, "").split(",").map((x) => x.trim().toLowerCase()).join(",");
-  add("CSV_HEADER_VALID", "CSV header valid", header === "id,title,prompt,variables,sample_input,notes" ? "PASS" : "FAIL", `Header: ${header || "missing"}`, 6);
+  const header = (csv?.content || "").split(/\r?\n/)[0] || "";
+  const csvHeader = validateCsvHeader(header);
+  add(QC_CHECK_IDS.CSV_HEADER_VALID, "CSV header valid", csvHeader.valid ? "PASS" : "FAIL", csvHeader.valid ? "CSV header contains required columns." : `Missing columns: ${csvHeader.missing.join(", ")}`);
   const csvRows = csv?.content ? csvDataRows(csv.content) : 0;
-  add(QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV row count sesuai", csvRows === args.promptCount ? "PASS" : "FAIL", `CSV rows: ${csvRows}, expected: ${args.promptCount}`, 6);
-  const sampleCount = (byFile("05_Sample_Input_Output.md")?.content?.match(/^##\s+Sample\s+\d+/gim) || []).length;
-  add(QC_CHECK_IDS.SAMPLE_IO_EXISTS, "Sample Input/Output ada", sampleCount >= 3 ? "PASS" : "FAIL", `Sample sections: ${sampleCount}`, 5);
+  add(QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV row count matches", csvRows === args.promptCount ? "PASS" : "FAIL", `CSV rows: ${csvRows}, expected: ${args.promptCount}`);
+
+  const sample = byFile("05_Sample_Input_Output.md");
+  const sampleCount = (sample?.content?.match(/^##\s+Sample\s+\d+/gim) || []).length;
+  add(QC_CHECK_IDS.SAMPLE_IO_EXISTS, "Sample Input/Output exists", sampleCount >= 2 ? "PASS" : "FAIL", `Sample sections: ${sampleCount}`);
+
+  const pdf = byFile("20_Complete_PDF_Product_Draft.md");
+  add(QC_CHECK_IDS.PDF_DRAFT_REQUIRED_SECTIONS, "PDF draft required sections", pdf?.content && hasRequiredPdfSections(pdf.content) ? "PASS" : "FAIL", "PDF draft must be a buyer handbook/playbook with required sections.");
+  add(QC_CHECK_IDS.PDF_MINIMUM_CONTENT_LENGTH, "PDF draft minimum length", (pdf?.content?.length || 0) > 5000 ? "PASS" : "FAIL", `PDF draft length: ${pdf?.content?.length || 0}`);
+
+  const sellerToolkit = byFile(SELLER_TOOLKIT_FILE);
+  add(QC_CHECK_IDS.SELLER_TOOLKIT_EXISTS, "Seller toolkit exists", sellerToolkit?.content ? "PASS" : "FAIL", sellerToolkit?.content ? "Seller Master Toolkit exists." : "Seller Master Toolkit missing.");
+  add(QC_CHECK_IDS.SELLER_TOOLKIT_HAS_PRICING, "Seller toolkit has pricing", /Pricing Recommendation|Starter \(IDR\)|Standard \(IDR\)|Premium \(IDR\)/i.test(sellerToolkit?.content || "") ? "PASS" : "FAIL", "Seller toolkit must include pricing recommendation.");
+  add(QC_CHECK_IDS.SELLER_TOOLKIT_HAS_PLATFORM_LISTINGS, "Seller toolkit has platform listings", marketplaceCopyDifferentiated(sellerToolkit?.content || "", args.marketplaces || []) ? "PASS" : "FAIL", "Seller toolkit must include differentiated sections for selected marketplaces.");
+  add(QC_CHECK_IDS.MARKETPLACE_COPY_DIFFERENTIATED, "Marketplace copy differentiated", marketplaceCopyDifferentiated(sellerToolkit?.content || "", args.marketplaces || []) ? "PASS" : "WARNING", "Selected marketplaces should have platform-specific positioning.");
+
+  const manifest = byFile("12_Product_Manifest.json");
   let manifestValid = false;
-  try { const parsed = JSON.parse(byFile("12_Product_Manifest.json")?.content || "{}"); manifestValid = parsed.architecture === PPA_V2_VERSION && Array.isArray(parsed.files?.buyer) && Array.isArray(parsed.files?.seller) && Array.isArray(parsed.files?.admin) && parsed.manual_upload_only === true && parsed.api_mode_enabled === false; } catch (_e) {}
-  add(QC_CHECK_IDS.MANIFEST_JSON_VALID, "Product Manifest JSON valid", manifestValid ? "PASS" : "FAIL", manifestValid ? "Manifest v2 valid." : "Manifest JSON invalid atau bukan schema v2.", 8);
-  const pdfDraft = byFile("20_Complete_PDF_Product_Draft.md");
-  add("PDF_DRAFT_BUYER_READY", "PDF draft buyer-ready", pdfDraft?.content && pdfDraft.content.length > 4000 && findBuyerLeaks(pdfDraft.content).length === 0 && !/Insert content from|Aplikasi belum membuat binary PDF otomatis/i.test(pdfDraft.content) ? "PASS" : "FAIL", "PDF draft harus lengkap, bukan placeholder.", 8);
-  // -------------------------------------------------------------------------
-  // MARKETPLACE QC — applied only to public listing files.
-  // Seller/admin files are excluded from this guard.
-  // -------------------------------------------------------------------------
-  const SELLER_ADMIN_EXEMPT = new Set([
-    SELLER_TOOLKIT_FILE,
-    MARKETPLACE_BUNDLE_MODULE.file,
-    "12_Product_Manifest.json",
-    "QC_Scorecard.md",
-  ]);
+  try {
+    const parsed = JSON.parse(manifest?.content || "{}");
+    manifestValid = parsed.architecture === PPA_V2_VERSION && Array.isArray(parsed.files?.buyer) && Array.isArray(parsed.files?.seller) && Array.isArray(parsed.files?.admin) && !parsed.files?.core && !parsed.files?.marketplace;
+  } catch (_e) { manifestValid = false; }
+  add(QC_CHECK_IDS.MANIFEST_JSON_VALID, "Manifest v2 schema valid", manifestValid ? "PASS" : "FAIL", manifestValid ? "Manifest uses buyer/seller/admin schema." : "Manifest invalid or still uses legacy core/marketplace schema.");
 
-  const mpFiles = modules.filter((m) =>
-    Object.values(MARKETPLACE_MODULES).some((d) => d.file === m.file_name) &&
-    !SELLER_ADMIN_EXEMPT.has(m.file_name)
-  );
+  const qcCard = byFile("QC_Scorecard.md");
+  add(QC_CHECK_IDS.QC_SCORECARD_EXISTS, "Buyer QC scorecard exists", qcCard?.content && /Buyer Output Review Checklist/i.test(qcCard.content) ? "PASS" : "FAIL", qcCard?.content ? "Buyer-facing QC scorecard exists." : "QC scorecard missing.");
 
-  const mpLeaks = mpFiles.filter((m) => findMarketplaceLeaks(m.content || "").length > 0);
-  add(
-    "MARKETPLACE_NO_LEAKAGE",
-    "Listing marketplace bebas internal/legacy wording",
-    mpLeaks.length ? "FAIL" : "PASS",
-    mpLeaks.length ? `Leakage di: ${mpLeaks.map((m) => m.file_name).join(", ")}` : "Semua listing marketplace bersih.",
-    10
-  );
+  // ─────────────────────────────────────────────────────────────────────────────
+      // ✅ B6: MARKETPLACE PUBLIC LISTING QC — 5 CHECK BARU
+      // ─────────────────────────────────────────────────────────────────────────────
+      
+      // Seller admin files EXEMPT dari buyer leakage rules
+      const SELLER_ADMIN_EXEMPT = new Set([
+        "00_Seller_Master_Toolkit.md",
+        "19_Marketplace_Bundle_Index.md",
+        "12_Product_Manifest.json",
+        "QC_Scorecard.md",
+      ]);
+      
+      // Kumpulkan listing publik (bukan seller admin)
+      const mpPublicListings = modules.filter(
+        (m) => Object.values(MARKETPLACE_MODULES).some((def) => def.file === m.file_name) 
+            && !SELLER_ADMIN_EXEMPT.has(m.file_name)
+      );
 
-  const idRx = /\b(isi paket|pengiriman|cocok untuk|manfaat utama|cara pakai|catatan penting|faq|faq pembeli|unduh|produk|paket|pembeli)\b/i;
-  const enRx = /\b(included files|delivery|best for|how it works|limitations|safe use|item title|item overview|key features|what you get|what['’]?s included)\b/i;
-  const langProblems: string[] = [];
-  for (const m of mpFiles) {
-    const isIDFile = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
-    const isENFile = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
-    const c = m.content || "";
-    if (isIDFile && !idRx.test(c)) langProblems.push(`${m.file_name} seharusnya Bahasa Indonesia`);
-    if (isENFile && !enRx.test(c)) langProblems.push(`${m.file_name} seharusnya English`);
-  }
-  add(
-    "MARKETPLACE_LANGUAGE_ROUTING",
-    "Bahasa listing sesuai platform",
-    langProblems.length ? "FAIL" : "PASS",
-    langProblems.length ? langProblems.join("; ") : "Setiap listing menggunakan bahasa sesuai platform.",
-    8
-  );
+      // 1. MARKETPLACE_NO_LEAKAGE
+      const mpLeakFiles = mpPublicListings.filter((m) => findMarketplaceLeaks(m.content || "").length > 0);
+      add(
+        QC_CHECK_IDS.MARKETPLACE_NO_LEAKAGE,
+        "Marketplace listing no leakage",
+        mpLeakFiles.length === 0 ? "PASS" : "FAIL",
+        mpLeakFiles.length === 0
+          ? "Semua listing marketplace bersih dari wording internal/legacy."
+          : `Leakage di: ${mpLeakFiles.map((m) => m.file_name).join(", ")}`
+      );
 
-  const normWords = (str: string) =>
-    new Set((str || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((word) => word.length > 3));
-  const jaccard = (a: Set<string>, b: Set<string>) => {
-    if (!a.size || !b.size) return 0;
-    let inter = 0;
-    for (const word of a) if (b.has(word)) inter++;
-    return inter / (a.size + b.size - inter);
-  };
-  let maxSim = 0;
-  let simPair = "";
-  for (let i = 0; i < mpFiles.length; i++) {
-    for (let j = i + 1; j < mpFiles.length; j++) {
-      const sim = jaccard(normWords(mpFiles[i].content || ""), normWords(mpFiles[j].content || ""));
-      if (sim > maxSim) {
-        maxSim = sim;
-        simPair = `${mpFiles[i].file_name} vs ${mpFiles[j].file_name}`;
+      // 2. MARKETPLACE_LANGUAGE_ROUTING
+      const ID_MARKERS = /\b(isi paket|pengiriman|cocok untuk|manfaat utama|cara pakai|catatan penting|faq pembeli|unduh)\b/i;
+      const EN_MARKERS = /\b(included files|delivery|best for|how it works|limitations|safe use|item title|item overview|what you get|what.?s included)\b/i;
+      const langFails: string[] = [];
+      
+      for (const m of mpPublicListings) {
+        const isID = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
+        const isEN = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
+        const c = m.content || "";
+        
+        if (isID && !ID_MARKERS.test(c)) langFails.push(`${m.file_name}: harus Bahasa Indonesia`);
+        if (isEN && !EN_MARKERS.test(c)) langFails.push(`${m.file_name}: must be English`);
       }
-    }
-  }
-  add(
-    "MARKETPLACE_NO_NEAR_DUPLICATES",
-    "Listing antar platform tidak near-duplicate",
-    mpFiles.length < 2 || maxSim <= 0.72 ? "PASS" : "FAIL",
-    mpFiles.length < 2
-      ? "Hanya 1 listing, tidak perlu cek duplikat."
-      : maxSim <= 0.72
-        ? `Similarity tertinggi: ${(maxSim * 100).toFixed(0)}% — aman.`
-        : `Near-duplicate: ${simPair} (${(maxSim * 100).toFixed(0)}%). Perlu platform-specific copy.`,
-    10
-  );
+      
+      add(
+        QC_CHECK_IDS.MARKETPLACE_LANGUAGE_ROUTING,
+        "Marketplace language routing",
+        langFails.length === 0 ? "PASS" : "FAIL",
+        langFails.length === 0
+          ? "Bahasa listing sesuai platform."
+          : langFails.join("; ")
+      );
 
-  const structProblems: string[] = [];
-  for (const m of mpFiles) {
-    const c = m.content || "";
-    const isID = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
-    const isEN = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
-    if (isID) {
-      if (!/##\s*(isi paket|isi paket digital|yang anda dapatkan)/i.test(c)) structProblems.push(`${m.file_name}: missing Isi Paket/Yang Anda Dapatkan`);
-      if (!/##\s*(faq|pertanyaan)/i.test(c)) structProblems.push(`${m.file_name}: missing FAQ`);
-      if (!/##\s*(pengiriman|cta)/i.test(c)) structProblems.push(`${m.file_name}: missing Pengiriman/CTA`);
-    }
-    if (isEN) {
-      if (!/##\s*(included files|what you get|what['’]?s included)/i.test(c)) structProblems.push(`${m.file_name}: missing Included Files/What You Get`);
-      if (!/##\s*(delivery)/i.test(c)) structProblems.push(`${m.file_name}: missing Delivery`);
-      if (!/##\s*(limitations|safe use|important)/i.test(c)) structProblems.push(`${m.file_name}: missing Limitations/Safe Use`);
-    }
-  }
-  add(
-    "MARKETPLACE_STRUCTURE_COMPLETE",
-    "Struktur listing marketplace lengkap",
-    structProblems.length ? "FAIL" : "PASS",
-    structProblems.length ? structProblems.join("; ") : "Semua listing punya seksi wajib.",
-    6
-  );
+      // 3. MARKETPLACE_NO_NEAR_DUPLICATES (Jaccard ≤ 0.72)
+      const _normWords = (s: string): Set<string> => {
+        return new Set(
+          (s || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, " ")
+            .split(/\s+/)
+            .filter((w) => w.length > 3)
+        );
+      };
+      
+      const _jaccard = (a: Set<string>, b: Set<string>): number => {
+        if (!a.size || !b.size) return 0;
+        let inter = 0;
+        for (const w of a) if (b.has(w)) inter++;
+        return inter / (a.size + b.size - inter);
+      };
+      
+      let _maxSim = 0;
+      let _maxPair = "";
+      const _mpWords = mpPublicListings.map((m) => ({ file: m.file_name, words: _normWords(m.content || "") }));
+      
+      for (let _i = 0; _i < _mpWords.length; _i++) {
+        for (let _j = _i + 1; _j < _mpWords.length; _j++) {
+          const _sim = _jaccard(_mpWords[_i].words, _mpWords[_j].words);
+          if (_sim > _maxSim) {
+            _maxSim = _sim;
+            _maxPair = `${_mpWords[_i].file} ↔ ${_mpWords[_j].file}`;
+          }
+        }
+      }
+      
+      add(
+        QC_CHECK_IDS.MARKETPLACE_NO_NEAR_DUPLICATES,
+        "Marketplace not near-duplicate",
+        mpPublicListings.length < 2 || _maxSim <= 0.72 ? "PASS" : "FAIL",
+        mpPublicListings.length < 2
+          ? "Hanya 1 listing marketplace."
+          : _maxSim <= 0.72
+            ? `Max similarity: ${(_maxSim * 100).toFixed(0)}%.`
+            : `Near-duplicate: ${_maxPair} (${(_maxSim * 100).toFixed(0)}%).`
+      );
 
-  const pdfModule = modules.find((m) => m.file_name === "20_Complete_PDF_Product_Draft.md");
-  const pdfText = pdfModule?.content || "";
-  const pdfLeaks = findMarketplaceLeaks(pdfText);
-  add(
-    "PDF_SOURCE_CLEAN",
-    "PDF source bebas internal/seller wording",
-    pdfLeaks.length ? "FAIL" : "PASS",
-    pdfLeaks.length ? `Term terlarang di PDF source: ${pdfLeaks.slice(0, 4).join(", ")}` : "PDF source bersih dari wording internal.",
-    8
-  );
-  const pdfH1 = (pdfText.match(/^#\s+/gm) || []).length;
-  const pdfDeep = pdfText.length > 4000 && pdfH1 >= 8;
-  add(
-    "PDF_PREMIUM_DEPTH",
-    "PDF playbook cukup tebal dan terstruktur",
-    pdfDeep ? "PASS" : "FAIL",
-    pdfDeep ? `PDF: ${pdfText.length} char, ${pdfH1} section H1.` : `PDF terlalu tipis (${pdfText.length} char, ${pdfH1} section H1, butuh >4000 char & ≥8 section).`,
-    6
-  );
+      // 4. PDF_SOURCE_CLEAN
+      const pdfDraft = byFile("20_Complete_PDF_Product_Draft.md");
+      const PDF_FORBIDDEN_RX = /Manual Upload Only|Seller Review Required|PREMIUM_PRODUCT_ARCHITECTURE_V2|Premium Product Architecture v2|QC_Scorecard\.md|Insert content from|diunggah manual oleh seller|draft ini harus direview|tidak ada api marketplace|seller wajib/i;
+      
+      add(
+        QC_CHECK_IDS.PDF_SOURCE_CLEAN,
+        "PDF source clean",
+        PDF_FORBIDDEN_RX.test(pdfDraft?.content || "") ? "FAIL" : "PASS",
+        PDF_FORBIDDEN_RX.test(pdfDraft?.content || "")
+          ? "PDF source masih ada internal/seller wording."
+          : "PDF source bersih."
+      );
+
+      // 5. MARKETPLACE_STRUCTURE_COMPLETE (WARNING only, not blocking)
+      const structFails: string[] = [];
+      
+      for (const m of mpPublicListings) {
+        const c = m.content || "";
+        const isID = /Shopee|Tokopedia|LynkID|Lynk/i.test(m.file_name);
+        const isEN = /Envato|Gumroad|Etsy|LemonSqueezy|Payhip/i.test(m.file_name);
+        
+        if (isID) {
+          if (!/##\s*isi paket/i.test(c))      structFails.push(`${m.file_name}: missing "Isi Paket"`);
+          if (!/##\s*(faq|pertanyaan)/i.test(c)) structFails.push(`${m.file_name}: missing FAQ`);
+          if (!/##\s*pengiriman/i.test(c))    structFails.push(`${m.file_name}: missing Pengiriman`);
+        }
+        
+        if (isEN) {
+          if (!/##\s*(included files|what.?s included|what you get)/i.test(c)) structFails.push(`${m.file_name}: missing Included Files`);
+          if (!/##\s*delivery/i.test(c))   structFails.push(`${m.file_name}: missing Delivery`);
+          if (!/##\s*(limitations|safe use)/i.test(c)) structFails.push(`${m.file_name}: missing Limitations`);
+        }
+      }
+      
+      add(
+        QC_CHECK_IDS.MARKETPLACE_STRUCTURE_COMPLETE,
+        "Marketplace structure complete",
+        structFails.length === 0 ? "PASS" : "WARNING",  // WARNING only
+        structFails.length === 0
+          ? "Semua listing punya struktur lengkap."
+          : `Structure incomplete: ${structFails.slice(0, 3).join("; ")}`
+      );
+
+  const fit = detectProductIntent({ productName: args.brand || "", niche: args.niche || "", targetAudience: args.audience || "", description: args.confirmedDescription || "", selectedAdapter: args.adapter || "CUSTOM", promptCount: args.promptCount });
+  add(QC_CHECK_IDS.ADAPTER_INTENT_MATCH, "Adapter matches product intent", fit.mismatch_warning ? "FAIL" : fit.ambiguity_warning ? "WARNING" : "PASS", fit.mismatch_warning || fit.ambiguity_warning || `Intent ${fit.intent} detected.`);
 
   const score = Math.min(100, Math.round(checks.reduce((sum, check) => sum + (check.status === "PASS" ? check.weight : check.status === "WARNING" ? check.weight * 0.5 : 0), 0)));
-  const blockingIds = new Set(["PPA_V2_FILES_COMPLETE", "NO_IGNORED_LEGACY_FILES", "BUYER_CONTENT_CLEAN", QC_CHECK_IDS.NO_API_MODULES, QC_CHECK_IDS.NO_PLACEHOLDER_TEXT, QC_CHECK_IDS.NO_FORBIDDEN_CLAIMS, QC_CHECK_IDS.PROMPT_COUNT_MATCHES, QC_CHECK_IDS.CSV_ROW_COUNT_MATCHES, "CSV_HEADER_VALID", "PDF_DRAFT_BUYER_READY", QC_CHECK_IDS.MANIFEST_JSON_VALID, "all_modules_acked", "MARKETPLACE_NO_LEAKAGE", "MARKETPLACE_LANGUAGE_ROUTING", "MARKETPLACE_NO_NEAR_DUPLICATES", "PDF_SOURCE_CLEAN"]);
-  const blocking = checks.filter((check) => check.status === "FAIL" && blockingIds.has(check.id));
-  return { score, status: scoreStatus(score), blocking_errors: blocking.length, errors: blocking.map((check) => check.message || check.name), warnings: checks.filter((check) => check.status === "WARNING" || (check.status === "FAIL" && !blockingIds.has(check.id))).map((check) => check.message || check.name), checks, approval_enabled: score >= QC_THRESHOLDS.PREMIUM_MIN && blocking.length === 0, generated_at: new Date().toISOString() };
+  const blocking = checks.filter((check) => check.status === "FAIL" && (BLOCKING_IDS.has(check.id) || check.id === "all_modules_acked"));
+  const errors = blocking.map((check) => check.message || check.name);
+  const warnings = checks.filter((check) => check.status === "WARNING" || (check.status === "FAIL" && !BLOCKING_IDS.has(check.id))).map((check) => check.message || check.name);
+  return {
+    score,
+    status: scoreStatus(score),
+    blocking_errors: blocking.length,
+    errors,
+    warnings,
+    checks,
+    approval_enabled: score >= QC_THRESHOLDS.PREMIUM_MIN && blocking.length === 0,
+    generated_at: new Date().toISOString(),
+  };
 }
 
+
+export function calculateCommercialReadiness(args: {
+  intent: ProductIntent;
+  strategy: ProductStrategy;
+  modules: Array<{ file_name: string; content: string | null }>;
+  marketplaces: string[];
+}): CommercialReadinessScore {
+  const recommendations: string[] = [];
+  const text = (file: string) => args.modules.find((m) => m.file_name === file)?.content || "";
+  const brief = text("01_Product_Brief.md");
+  const book = text("02_PromptBook.md");
+  const pdf = text("20_Complete_PDF_Product_Draft.md");
+  const guide = text("04_UsageGuide.md");
+  const samples = text("05_Sample_Input_Output.md");
+  const faq = text("09_Buyer_FAQ.md");
+  const qc = text("QC_Scorecard.md");
+  const sellerToolkit = text(SELLER_TOOLKIT_FILE);
+
+  let positioning = 45;
+  if (brief.length > 900) positioning += 15;
+  if (new RegExp(args.strategy.core_promise.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(brief)) positioning += 15;
+  if (/Buyer Transformation|Product Promise|Masalah yang Diselesaikan/i.test(brief)) positioning += 15;
+  if (!/generic|umum|sekadar prompt/i.test(brief)) positioning += 10; else recommendations.push("Product Brief masih terlalu generic.");
+
+  let depth = 40;
+  const promptSections = (book.match(/^##\s+\d+\./gm) || []).length;
+  if (promptSections >= Math.max(5, args.strategy.prompt_categories.length)) depth += 15;
+  if (/Beginner Example/i.test(book) && /Advanced Example/i.test(book)) depth += 15;
+  if (/Common Mistakes/i.test(book) && /Manual Verification/i.test(book)) depth += 15;
+  if (/Full Prompt/i.test(book) && /Expected Output/i.test(book)) depth += 15;
+  if (depth < 85) recommendations.push("PromptBook perlu lebih spesifik: examples, output format, mistakes, dan verification notes.");
+
+  let pdfScore = 40;
+  if (pdf.length > 5000) pdfScore += 15;
+  if (hasRequiredPdfSections(pdf)) pdfScore += 25;
+  if (/Example 1/i.test(pdf) && /Example 2/i.test(pdf)) pdfScore += 10;
+  if (!/TODO|placeholder|Insert content|PENDING/i.test(pdf)) pdfScore += 10; else recommendations.push("PDF masih mengandung placeholder.");
+
+  let marketplace = 50;
+  if ((args.marketplaces || []).length > 1) marketplace += 15;
+  if (marketplaceCopyDifferentiated(sellerToolkit, args.marketplaces || [])) marketplace += 25; else recommendations.push("Marketplace copy perlu dibedakan per platform.");
+  if (/Shopee/i.test(sellerToolkit) && /Gumroad|Etsy|Tokopedia|Lynk|Envato|LemonSqueezy/i.test(sellerToolkit)) marketplace += 10;
+
+  let buyerValue = 40;
+  if (guide.length > 900 && /Beginner Workflow|Advanced Workflow/i.test(guide)) buyerValue += 20;
+  if (samples.length > 1000 && /Sample\s+1/i.test(samples)) buyerValue += 15;
+  if (/Apa produk ini|File apa saja/i.test(faq)) buyerValue += 10;
+  if (/Buyer Output Review Checklist/i.test(qc)) buyerValue += 15;
+  if (buyerValue < 85) recommendations.push("Buyer value perlu diperkuat dengan guide, sample, FAQ, dan checklist yang lebih konkret.");
+
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const positioning_score = clamp(positioning);
+  const prompt_depth_score = clamp(depth);
+  const pdf_premium_score = clamp(pdfScore);
+  const marketplace_copy_score = clamp(marketplace);
+  const buyer_value_score = clamp(buyerValue);
+  const overall_commercial_score = clamp(positioning_score * 0.2 + prompt_depth_score * 0.25 + pdf_premium_score * 0.2 + marketplace_copy_score * 0.15 + buyer_value_score * 0.2);
+  const readiness_level = overall_commercial_score >= 95 ? "PREMIUM" : overall_commercial_score >= 85 ? "GOOD" : overall_commercial_score >= 70 ? "USABLE" : "WEAK";
+  return { positioning_score, prompt_depth_score, pdf_premium_score, marketplace_copy_score, buyer_value_score, overall_commercial_score, readiness_level, recommendations };
+}
 
 export function generateRunRequestId(): string {
   const d = new Date();
@@ -2340,12 +2770,15 @@ export function generateRunRequestId(): string {
 
 export function safeMarketplaces(mps: string[]): string[] {
   const seen = new Set<string>();
-  return (mps ?? [])
-    .map((m) => normalizeMarketplace(String(m)))
-    .filter((m) => MARKETPLACES.includes(m as never) && !isForbiddenModuleKey(String(m)))
-    .filter((m) => {
-      if (seen.has(m)) return false;
-      seen.add(m);
-      return true;
-    });
+  const out: string[] = [];
+  for (const m of mps) {
+    const n = normalizeMarketplace(String(m));
+    if (!Object.values(MARKETPLACE_MODULES).some((d) => d.marketplace === n)) continue;
+    if (isForbiddenModuleKey(n)) continue;
+    if (!seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
 }
